@@ -18,11 +18,11 @@ new_sqlite_classes = ["GeoProxy"]
 enabled = true
 
 # Một Worker phục vụ cả giao diện (web/dist) lẫn API → một địa chỉ duy nhất, không cần CORS.
-# Request /api/* và /health chạy code Worker; mọi đường dẫn khác trả file tĩnh, đường dẫn lạ trả index.html (SPA).
+# Request /api/*, /health và /mcp (MCP server) chạy code Worker; mọi đường dẫn khác trả file tĩnh, đường dẫn lạ trả index.html (SPA).
 [assets]
 directory = "../web/dist"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/health"]
+run_worker_first = ["/api/*", "/health", "/mcp"]
 
 [vars]
 APP_ENV = "development"
