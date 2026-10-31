@@ -37,7 +37,7 @@ export class GeminiEmbedder implements Embedder {
     const url = g
       ? `https://gateway.ai.cloudflare.com/v1/${g.accountId}/${g.gatewayId}/google-ai-studio/${path}`
       : `https://generativelanguage.googleapis.com/${path}`;
-    const headers: Record<string, string> = { "content-type": "application/json", "x-goog-api-key": this.cfg.apiKey };
+    const headers: Record<string, string> = { "content-type": "application/json", "x-goog-api-key": (this.cfg.apiKey ?? "").replace(/[^\x21-\x7E]/g, "") };
     if (g) {
       headers["cf-aig-collect-log"] = "false";
       if (g.token) headers["cf-aig-authorization"] = `Bearer ${g.token}`;
@@ -54,7 +54,11 @@ export class GeminiEmbedder implements Embedder {
         })),
       }),
     });
-    if (!r.ok) throw new ProviderError(`Embed HTTP ${r.status}`, r.status, "google-ai-studio");
+    if (!r.ok) {
+      let reason = "";
+      try { const e: any = await r.clone().json(); reason = e?.error?.details?.find((d: any) => d?.reason)?.reason ?? e?.error?.status ?? ""; } catch {}
+      throw new ProviderError(`Embed HTTP ${r.status}${reason ? " " + reason : ""}`, r.status, "google-ai-studio");
+    }
     const data: any = await r.json();
     return (data.embeddings ?? []).map((e: any) => normalize(e.values as number[]));
   }
