@@ -12,7 +12,7 @@ export function turnOut(o: Partial<Record<string, unknown>> = {}) {
     needs_source: false,
     ready_for_transfer: false,
     suggest_mode_switch: null,
-    confidence: "low",
+    confidence: "medium",
     ...o,
   };
 }

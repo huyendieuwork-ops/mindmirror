@@ -124,6 +124,18 @@ export class Trace {
       costUsd: round6(sum(gens.map((g) => g.costUsd ?? 0))),
       errors: this.data.spans.filter((s) => s.status === "error").map((s) => ({ span: s.name, error: s.error })),
       steps: this.data.spans.map((s) => ({ name: s.name, kind: s.kind, ms: dur(s), status: s.status, parent: s.parentId })),
+      // ---- bổ sung cho demo kỹ thuật (không chứa nội dung học tập) ----
+      workflow: this.data.spans.filter((s) => s.name.startsWith("step.")).map((s) => ({ step: s.name.slice(5), ms: dur(s), status: s.status })),
+      tools: this.data.spans
+        .filter((s) => s.kind === "tool" && s.name.startsWith("tool."))
+        .map((s) => ({ name: s.name.slice(5), initiator: s.attrs.initiator ?? null, ok: s.attrs.ok !== false && s.status === "ok", ms: dur(s), error: s.attrs.error_code ?? null })),
+      guardrails: [...new Set(this.data.spans.filter((s) => s.kind === "guardrail" && Array.isArray(s.attrs.flags)).flatMap((s) => s.attrs.flags as string[]))],
+      retrieval: this.data.spans
+        .filter((s) => s.kind === "retriever")
+        .map((s) => ({ purpose: s.attrs.purpose ?? null, method: s.attrs.method ?? null, hits: Array.isArray(s.attrs.results) ? s.attrs.results.length : 0, ms: dur(s) })),
+      retries: this.data.spans.filter((s) => s.name === "llm.retry").length,
+      models: [...new Set(gens.map((g) => g.model).filter(Boolean))],
+      costNote: "Chi phí ƯỚC TÍNH theo bảng giá công khai (obs/pricing.ts); free tier không bị tính phí — hoá đơn thật xem ở Google AI Studio.",
     };
   }
 }

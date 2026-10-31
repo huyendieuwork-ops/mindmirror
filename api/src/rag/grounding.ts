@@ -35,5 +35,7 @@ export function renderCitationMarkers(text: string, valid: Map<string, Citation>
       });
     return nums.length ? `[${[...new Set(nums)].join(", ")}]` : "";
   });
-  return { text: out.replace(/\s+([.,;!?])/g, "$1").replace(/ {2,}/g, " ").trim(), citations: order.map((a) => valid.get(a)!) };
+  // Chỉ dọn khoảng trắng thừa do bỏ nhãn (giữa chữ trên cùng dòng) — không đụng thụt lề code/bảng markdown.
+  const tidy = out.replace(/(\S)[ \t]+([.,;!?])(?=\s|$)/g, "$1$2").replace(/(\S) {2,}(?=\S)/g, "$1 ");
+  return { text: tidy.trim(), citations: order.map((a) => valid.get(a)!) };
 }

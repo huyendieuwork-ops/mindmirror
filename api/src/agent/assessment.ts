@@ -63,7 +63,7 @@ export function assessLearner(s: Session): LearnerAssessment {
     grounded,
     criteria,
     counts,
-    note: "Đây là quan sát trong phiên này dựa trên câu trả lời của cậu" + (grounded ? " và tài liệu cậu cung cấp" : "") +
+    note: "Đây là quan sát trong phiên này dựa trên câu trả lời của bạn" + (grounded ? " và tài liệu bạn cung cấp" : "") +
       " — không phải điểm số hay đánh giá năng lực tổng thể.",
   };
 }

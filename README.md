@@ -107,6 +107,16 @@ Mỗi lượt là một trace: `agent.turn → policy.decide → rag.retrieve �
 
 Chi tiết cách gán nhãn, định nghĩa chỉ số và ngưỡng: `docs/EVALS.md`.
 
+## Giai đoạn 3: AI Agent MVP (workflow · tool calling · MCP server · guardrails · evals)
+
+Xem **[docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md)**: sơ đồ kiến trúc & workflow, danh sách công cụ, RAG, MCP, các lớp guardrail,
+cách xem observability (Cài đặt → Chế độ kỹ thuật), cách chạy evals (`npm run eval:agent`), ví dụ phiên Socratic, hướng dẫn demo và giới hạn.
+
+- `src/agent/tools.ts` — tool registry (5 công cụ, schema vào/ra, kiểm quyền) dùng chung cho native tool calling và MCP server.
+- `src/agent/input-guard.ts` — guardrail đầu vào; `src/agent/guardrails.ts` — guardrail đầu ra/đánh giá.
+- `src/mcp/server.ts` — `POST /mcp` (JSON-RPC 2.0), công cụ chỉ-đọc, xác thực JWT.
+- `scripts/agent-eval.ts` + `eval/agent-cases.json` — 51 ca (41 offline deterministic, 10 live có giới hạn lời gọi).
+
 ## Cấu trúc
 
 ```

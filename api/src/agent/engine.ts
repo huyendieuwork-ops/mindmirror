@@ -2,7 +2,13 @@ import { decide, detectIntent, isSupportAction, DEFAULT_LIMITS, type Limits } fr
 import { systemPrompt, turnPrompt, summaryPrompt, planPrompt } from "./prompts";
 import { TurnOutputSchema, SummaryOutputSchema, PlanOutputSchema, extractJson, type TurnOutput } from "./schema";
 import { findQuoteSource } from "./evidence";
-import { sanitizeAssistantText } from "./guardrails";
+import {
+  answerOverlap, isRepeatedQuestion, leaksSystemPrompt, redactSecrets, sanitizeAssistantText, stripUnsupportedPraise,
+} from "./guardrails";
+import { checkUserInput } from "./input-guard";
+import { executeTool, toolDeclarations, type ToolName } from "./tools";
+import type { Store } from "../store/types";
+import type { ToolExchange } from "../providers/types";
 import { buildMirrorCard, sameConcept } from "./mirror-card";
 import type {
   Action, Citation, Criterion, Evidence, Gap, LearningState, Message, RetrievedChunk, Session, SessionMode, TurnResult, UserIntent, UserSettings,
@@ -21,7 +27,18 @@ export interface EngineDeps {
   id?: () => string;
   retriever?: Retriever | null; // RAG: tìm đoạn liên quan trong tài liệu của phiên
   trace?: Trace;                // Observability: mọi bước ghi thành span
+  /** Bật tool calling + lưu tổng kết qua tool registry (cần store để kiểm tra quyền theo userId). */
+  tools?: { store: Store } | null;
+  maxToolRounds?: number;       // số vòng model gọi công cụ tối đa / lượt (mặc định 1)
+  maxLlmCallsPerTurn?: number;  // trần số lần gọi model / lượt, gồm cả vòng tool và vòng sửa JSON (mặc định 3)
+  maxInputChars?: number;
 }
+
+/** Các bước workflow của một lượt — mỗi bước là một span "step.<tên>" trong trace. */
+export const WORKFLOW_STEPS = [
+  "input_validation", "intent_understanding", "policy_decision", "evidence_retrieval", "knowledge_analysis",
+  "misconception_detection", "output_validation", "reassessment", "session_summary",
+] as const;
 
 /** Ném khi model không chạy được — HTTP layer trả 503 "thử lại", KHÔNG lưu gì. */
 export class AgentUnavailableError extends Error {
@@ -49,8 +66,8 @@ export function createSession(input: NewSessionInput, deps: Pick<EngineDeps, "no
   const topic = input.topic.trim().slice(0, 200);
   const opening =
     input.mode === "reunderstand"
-      ? `Mình cùng nhìn lại “${topic}” nhé. Cậu thử giải thích theo cách cậu đang hiểu xem — không cần chính xác từng chữ. Chỗ nào cậu thấy hay vướng nhất?`
-      : `Hay đấy! Về “${topic}”, cậu đang tò mò nhất điều gì — muốn hiểu nguyên lý, xem ví dụ đời thường, hay thử tự đoán xem vì sao trước?`;
+      ? `Mình cùng nhìn lại “${topic}” nhé. Bạn thử giải thích theo cách bạn đang hiểu xem — không cần chính xác từng chữ. Chỗ nào bạn thấy hay vướng nhất?`
+      : `Hay đấy! Về “${topic}”, bạn đang tò mò nhất điều gì — muốn hiểu nguyên lý, xem ví dụ đời thường, hay thử tự đoán xem vì sao trước?`;
   return {
     id: id(),
     userId: input.userId,
@@ -97,8 +114,8 @@ export async function prepareGroundedSession(session: Session, deps: Pick<Engine
     span.set({ retrieved: retrieved.length });
     const docTitle = retrieved[0]?.documentTitle;
     const fallbackOpening = retrieved.length
-      ? `Mình đã xem phần liên quan trong “${docTitle}”${retrieved[0]!.chunk.page ? ` (tr. ${retrieved[0]!.chunk.page})` : ""}. Cậu thử giải thích “${s.state.topic}” theo cách cậu hiểu trước nhé — chưa cần mở tài liệu ra.`
-      : `Mình chưa tìm thấy đoạn nào trong tài liệu nói về “${s.state.topic}”. Cậu thử giải thích theo cách cậu hiểu, mình sẽ đối chiếu khi có căn cứ nhé.`;
+      ? `Mình đã xem phần liên quan trong “${docTitle}”${retrieved[0]!.chunk.page ? ` (tr. ${retrieved[0]!.chunk.page})` : ""}. Bạn thử giải thích “${s.state.topic}” theo cách bạn hiểu trước nhé — chưa cần mở tài liệu ra.`
+      : `Mình chưa tìm thấy đoạn nào trong tài liệu nói về “${s.state.topic}”. Bạn thử giải thích theo cách bạn hiểu, mình sẽ đối chiếu khi có căn cứ nhé.`;
     if (retrieved.length === 0) {
       s.messages[0]!.text = fallbackOpening;
       return s;
@@ -168,8 +185,37 @@ export async function runTurn(
 async function runTurnInner(
   s: Session, turn: TurnInput, deps: EngineDeps, trace: Trace, root: SpanHandle, id: () => string, nowIso: string, limits: Limits,
 ): Promise<{ session: Session; result: TurnResult }> {
-  const text = turn.text.trim();
-  const intent: UserIntent | null = turn.intent ?? detectIntent(text);
+  const workflow: { step: string; ms: number; status: "ok" | "skipped" | "error"; note?: string }[] = [];
+  const step = <T>(name: (typeof WORKFLOW_STEPS)[number], fn: (span: SpanHandle) => Promise<T> | T): Promise<T> => {
+    const span = root.child(`step.${name}`, "chain", { step: name });
+    const t0 = Date.now();
+    return Promise.resolve()
+      .then(() => fn(span))
+      .then((v) => { workflow.push({ step: name, ms: Date.now() - t0, status: "ok" }); return v; })
+      .catch((e) => { workflow.push({ step: name, ms: Date.now() - t0, status: "error" }); span.fail(e); throw e; })
+      .finally(() => span.end());
+  };
+  const guardrails: string[] = [];
+  const toolsUsed: NonNullable<TurnResult["toolsUsed"]> = [];
+  const finishMeta = () => root.set({ workflow, guardrails, tools: toolsUsed });
+
+  // ---------- 1. Input validation (guardrail đầu vào, 0 API call) ----------
+  const verdict = await step("input_validation", (span) => {
+    const v = checkUserInput(turn.text, { maxChars: deps.maxInputChars ?? 3000, hasIntent: !!turn.intent });
+    span.set({ verdict: v.kind, flags: v.flags });
+    if (v.flags.length) trace.start("guardrail.input", "guardrail", span, { flags: v.flags, action: v.kind }).end();
+    return v;
+  });
+  guardrails.push(...verdict.flags.map((f) => `input:${f}`));
+  if (verdict.kind === "reject") throw new Error(verdict.code === "too_long" ? "INPUT_TOO_LONG" : "EMPTY_TURN");
+  const text = verdict.text;
+
+  // ---------- 2. Intent understanding (luật + nút bấm, 0 API call) ----------
+  const intent: UserIntent | null = await step("intent_understanding", (span) => {
+    const i = turn.intent ?? detectIntent(text);
+    span.set({ intent: i, source: turn.intent ? "button" : i ? "rule" : null });
+    return i;
+  });
   root.set({ intent, intent_source: turn.intent ? "button" : intent ? "rule" : null }).io(trace.content(text));
 
   if (text) {
@@ -177,7 +223,16 @@ async function runTurnInner(
     s.state.turnCount += 1;
   }
 
-  const decision = decide(s, intent, limits);
+  // Yêu cầu bí mật hệ thống / dữ liệu người khác → từ chối, không gọi model.
+  if (verdict.kind === "refuse") {
+    s.messages.push({ id: id(), role: "assistant", text: verdict.reply, action: null, intent: null, createdAt: nowIso });
+    s.updatedAt = nowIso;
+    finishMeta();
+    return { session: s, result: baseResult(s, id(), "refuse", verdict.reply, [], null, { quickReplies: ["try", "finish"], guardrails, toolsUsed }) };
+  }
+
+  // ---------- 3. Policy decision (state machine bằng code) ----------
+  const decision = await step("policy_decision", () => decide(s, intent, limits));
   trace.start("policy.decide", "guardrail", root, {
     kind: decision.kind,
     ...(decision.kind === "llm" ? { allowed_actions: decision.allowedActions, forced_action: decision.forcedAction, target_hint: decision.targetHintLevel } : {}),
@@ -185,24 +240,36 @@ async function runTurnInner(
     round_on_same_gap: s.state.roundOnSameGap, agent_led_rounds: s.state.agentLedRounds,
   }).end();
 
-  // ---------- 1. Kết thúc → thẻ Gương Hiểu Biết ----------
+  // ---------- 3a. Kết thúc → Session summary (thẻ Gương Hiểu Biết + lưu qua tool) ----------
   if (decision.kind === "finish") {
-    const cardSpan = root.child("card.build", "chain");
-    const card = await buildMirrorCard(s, deps.core, cardSpan).finally(() => cardSpan.end());
+    const { card, saved } = await step("session_summary", async (span) => {
+      const cardSpan = span.child("card.build", "chain");
+      const card = await buildMirrorCard(s, deps.core, cardSpan).finally(() => cardSpan.end());
+      let saved = false;
+      if (deps.tools) {
+        const r = await executeTool("save_session_summary", { session_id: s.id, card }, {
+          userId: s.userId, store: deps.tools.store, retriever: deps.retriever ?? null, session: s, trace, parent: span, initiator: "policy",
+        });
+        toolsUsed.push({ name: "save_session_summary", initiator: "policy", ok: r.ok });
+        saved = r.ok;
+      }
+      return { card, saved };
+    });
     s.status = "finished";
     s.state.phase = "finished";
     const msg = card.insufficientEvidence
       ? "Mình tổng kết phiên ở đây nhé. Phiên này còn ngắn nên mình chưa đủ căn cứ để ghi nhận nhiều — thẻ dưới đây chỉ ghi những gì thực sự có trong cuộc trò chuyện."
-      : "Mình tổng kết phiên ở đây nhé. Đây là Gương Hiểu Biết của cậu hôm nay.";
+      : "Mình tổng kết phiên ở đây nhé. Đây là Gương Hiểu Biết của bạn hôm nay.";
     s.messages.push({ id: id(), role: "assistant", text: msg, action: "summarize", intent: null, createdAt: nowIso });
     s.updatedAt = nowIso;
+    finishMeta();
     return {
       session: s,
-      result: baseResult(s, id(), "finish", msg, [], null, { isFinished: true, card, quickReplies: [] }),
+      result: baseResult(s, id(), "finish", msg, [], null, { isFinished: true, card, quickReplies: [], cardSaved: saved, toolsUsed, guardrails }),
     };
   }
 
-  // ---------- 2. Hành động deterministic (0 API call) ----------
+  // ---------- 3b. Hành động deterministic (0 API call) ----------
   if (decision.kind === "deterministic") {
     if (decision.action === "skip") {
       const g = s.gaps.find((x) => x.id === s.state.currentGapId);
@@ -220,157 +287,278 @@ async function runTurnInner(
     }
     s.messages.push({ id: id(), role: "assistant", text: decision.text, action: null, intent: null, createdAt: nowIso });
     s.updatedAt = nowIso;
+    finishMeta();
     return {
       session: s,
-      result: baseResult(s, id(), decision.action, decision.text, [], null, { quickReplies: decision.quickReplies }),
+      result: baseResult(s, id(), decision.action, decision.text, [], null, { quickReplies: decision.quickReplies, guardrails, toolsUsed }),
     };
   }
 
-  // ---------- 3. Lượt cần LLM ----------
+  // ---------- 4. Lượt cần LLM ----------
+  const budget = { used: 0, max: deps.maxLlmCallsPerTurn ?? 3 };
   await maybeSummarize(s, deps, root);
+  const toolCtx = (parent: SpanHandle, initiator: "policy" | "model", sourceOffset: number) => ({
+    userId: s.userId, store: deps.tools!.store, retriever: deps.retriever ?? null, session: s, trace, parent, initiator, sourceOffset,
+  });
 
-  // 3.0 RAG: truy xuất đoạn tài liệu liên quan tới điểm đang xét
+  // 4a. Evidence retrieval: phiên có tài liệu → policy LUÔN lấy ngữ cảnh (rẻ, không gọi LLM)
   let retrieved: RetrievedChunk[] = [];
-  if (deps.retriever && s.documentIds.length) {
-    const gap = s.gaps.find((g) => g.id === s.state.currentGapId)?.concept;
-    const query = [gap, text || s.messages.at(-1)?.text, s.state.topic].filter(Boolean).join(" \n ");
-    retrieved = await deps.retriever.search(s.userId, s.documentIds, query, 4, { trace, parent: root, purpose: "turn" });
+  const directives: string[] = [decision.directive];
+  if (verdict.directive) directives.push(verdict.directive);
+  if (s.state.repeatedQuestion) {
+    directives.push("Lượt trước bạn đã lặp lại một câu hỏi cũ: lần này đổi góc hỏi, hoặc đưa ví dụ/tình huống cụ thể. Không hỏi lại y hệt.");
+    s.state.repeatedQuestion = false;
   }
-  const grounded = retrieved.length > 0 || s.rubric.length > 0;
+  if (deps.retriever && s.documentIds.length) {
+    retrieved = await step("evidence_retrieval", async (span) => {
+      const gap = s.gaps.find((g) => g.id === s.state.currentGapId)?.concept;
+      const query = [gap, text || s.messages.at(-1)?.text, s.state.topic].filter(Boolean).join(" \n ").slice(0, 600);
+      if (deps.tools) {
+        const r = await executeTool("retrieve_document_context", { query, k: 4 }, toolCtx(span, "policy", 0));
+        toolsUsed.push({ name: "retrieve_document_context", initiator: "policy", ok: r.ok });
+        return r.ok ? r.chunks ?? [] : [];
+      }
+      return deps.retriever!.search(s.userId, s.documentIds, query, 4, { trace, parent: span, purpose: "turn" });
+    });
+    if (!retrieved.length) directives.push("Không tìm thấy đoạn tài liệu phù hợp cho lượt này: nếu cần căn cứ thì nói rõ tài liệu của người học chưa đề cập, KHÔNG bịa trích dẫn.");
+  } else {
+    workflow.push({ step: "evidence_retrieval", ms: 0, status: "skipped", note: "no_session_documents" });
+  }
 
-  const sys = systemPrompt(s.settings, grounded);
+  // 4b. Công cụ cho model: code chỉ MỞ công cụ phù hợp ngữ cảnh, model tự quyết có gọi hay không.
+  const modelTools = deps.tools && deps.core.supportsTools ? await availableTools(s, text, deps.tools.store) : [];
+  const grounded = retrieved.length > 0 || s.rubric.length > 0;
+  const sys = systemPrompt(s.settings, grounded || modelTools.includes("search_learning_materials"), s.state.mode, modelTools.length > 0);
   const user = turnPrompt({
     session: text ? { ...s, messages: s.messages.slice(0, -1) } : s, // tin hiện tại đưa riêng
     retrieved,
     userText: text || `(người dùng bấm nút: ${intent})`,
     allowedActions: decision.allowedActions,
-    directive: decision.directive,
+    directive: directives.filter(Boolean).join(" "),
     targetHintLevel: decision.targetHintLevel,
+    documentsAttachedButNoMatch: s.documentIds.length > 0 && retrieved.length === 0,
   });
+  const long = s.state.mode === "explore" || decision.forcedAction === "show_answer" || decision.forcedAction === "explain_foundation";
 
-  const llmSpan = root.child("agent.respond", "chain", { prompt_chars: sys.length + user.length });
-  const { output, provider, model, attempts } = await callTurnModel(deps.core, sys, user, decision.allowedActions, llmSpan).finally(() => llmSpan.end());
-  llmSpan.set({ model_action: output.next_action, repair_attempts: attempts - 1 });
+  // 4c. Knowledge analysis + Socratic question generation (1 lần gọi; +1 nếu model gọi công cụ)
+  const gen = await step("knowledge_analysis", async (span) => {
+    const llmSpan = span.child("agent.respond", "chain", { prompt_chars: sys.length + user.length, tools_offered: modelTools });
+    try {
+      const exchanges: ToolExchange[] = [];
+      const tools = toolDeclarations(modelTools);
+      const maxRounds = deps.maxToolRounds ?? 1;
+      for (let round = 0; ; round++) {
+        const canCallTools = tools.length > 0 && round < maxRounds && budget.used + 2 <= budget.max;
+        const res = await callTurnModel(deps.core, {
+          system: sys, user, allowed: decision.allowedActions, span: llmSpan, budget,
+          tools: tools.length ? tools : undefined, toolMode: canCallTools ? "AUTO" : "NONE", exchanges, maxOutputTokens: long ? 1500 : 900,
+        });
+        if (res.kind === "final") {
+          llmSpan.set({ model_action: res.output.next_action, repair_attempts: res.attempts - 1, tool_rounds: round, llm_calls: budget.used });
+          return res;
+        }
+        // Model yêu cầu công cụ → chạy (tối đa 3 lời gọi/vòng), gửi kết quả lại cho model viết câu trả lời cuối.
+        const results: ToolExchange["results"] = [];
+        for (const call of res.calls.slice(0, 3)) {
+          const allowedTool = (modelTools as string[]).includes(call.name);
+          const r = allowedTool
+            ? await executeTool(call.name, call.args, toolCtx(llmSpan, "model", retrieved.length))
+            : ({ ok: false, error: { code: "forbidden", message: "tool_not_offered_this_turn" } } as const);
+          if (!allowedTool) guardrails.push(`tool:not_offered:${call.name}`);
+          toolsUsed.push({ name: call.name, initiator: "model", ok: r.ok });
+          if (r.ok && r.chunks?.length) retrieved.push(...r.chunks); // nhãn S(k+1).. khớp source_id công cụ đã trả
+          results.push({ name: call.name, id: call.id, response: r.ok ? r.data : { error: r.error } });
+        }
+        exchanges.push({ calls: res.calls.slice(0, 3), rawModelParts: res.rawModelParts, results });
+      }
+    } finally {
+      llmSpan.end();
+    }
+  });
+  const { output, provider, model } = gen;
   const vSpan = root.child("validate.output", "guardrail");
 
-  // 3a. Hành động: phải thuộc tập code cho phép
+  // ---------- 5. Misconception detection: bằng chứng + lỗ hổng, kiểm chứng bằng code ----------
+  const groundedNow = retrieved.length > 0 || s.rubric.length > 0;
+  const aliases = aliasMap(retrieved);
+  const validCites = new Map<string, Citation>();
+  const { newEvidence, dropped, downgraded, observedNow, focusGap, supportBefore } = await step("misconception_detection", (span) => {
+    for (const c of output.source_citations) {
+      const v = validateCitation(c.source, c.quote, aliases);
+      if (v) validCites.set(c.source.trim().toUpperCase(), v);
+    }
+    const supportBefore = s.state.supportCount;
+    const newEvidence: Evidence[] = [];
+    let dropped = 0, downgraded = 0;
+    const rubricIds = new Set(s.rubric.map((c) => c.id));
+    for (const e of output.observed_evidence) {
+      const msgId = findQuoteSource(e.quote, s.messages);
+      if (!msgId) { dropped++; continue; } // quote không phải lời người học → bỏ
+      const criterionId = e.criterion_id && rubricIds.has(e.criterion_id.trim().toUpperCase()) ? e.criterion_id.trim().toUpperCase() : null;
+      const sourceCitation = e.source_ref ? validateCitation(e.source_ref.source, e.source_ref.quote, aliases) : null;
+      if (sourceCitation && e.source_ref) validCites.set(e.source_ref.source.trim().toUpperCase(), sourceCitation);
+      let status = e.status;
+      if (groundedNow) {
+        // Nói người học SAI thì phải chỉ ra được tài liệu nói gì; nói ĐÚNG thì phải gắn tiêu chí hoặc nguồn.
+        if (status === "contradicted" && !sourceCitation) { status = "unclear"; downgraded++; }
+        else if (status === "observed" && !criterionId && !sourceCitation) { status = "unclear"; downgraded++; }
+      } else if (status === "contradicted" && output.confidence === "low") {
+        // Không có tài liệu: chỉ kết luận "sai" khi model đủ chắc — tránh chê sai người đang đúng.
+        status = "unclear"; downgraded++;
+      }
+      if (s.evidence.some((x) => x.messageId === msgId && x.criterion === e.criterion && x.status === status)) continue;
+      newEvidence.push({
+        id: id(), messageId: msgId, criterion: e.criterion, claim: e.claim, quote: e.quote, status,
+        assisted: supportBefore > 0, supportLevelAtTime: s.state.hintLevel,
+        criterionId, sourceCitation, context: answerContext(s.messages, msgId), createdAt: nowIso,
+      });
+    }
+    s.evidence.push(...newEvidence);
+    const observedNow = newEvidence.some((e) => e.status === "observed");
+
+    // Gap: chỉ cho "resolved" khi có observed evidence thật ở lượt này
+    if (observedNow) {
+      for (const r of output.resolved_gaps) {
+        const g = s.gaps.find((x) => x.status === "open" && sameConcept(x.concept, r));
+        if (g) g.status = g.supportLevel > 0 || supportBefore > 0 ? "resolved_after_support" : "resolved";
+      }
+    }
+    let focusGap: Gap | null = null;
+    for (const c of output.suspected_gaps) {
+      let g = s.gaps.find((x) => sameConcept(x.concept, c) && x.status !== "resolved" && x.status !== "resolved_after_support");
+      if (!g) {
+        g = { id: id(), concept: c, status: "open", supportLevel: 0 };
+        s.gaps.push(g);
+      } else if (g.status === "skipped") {
+        g.status = "open";
+      }
+      focusGap ??= g;
+    }
+    span.set({
+      evidence: newEvidence.map((e) => e.status), dropped_fake_quote: dropped, downgraded_unsupported: downgraded,
+      gaps_open: s.gaps.filter((g) => g.status === "open").length,
+    });
+    return { newEvidence, dropped, downgraded, observedNow, focusGap, supportBefore };
+  });
+  if (dropped) guardrails.push("assessment:fake_quote_dropped");
+  if (downgraded) guardrails.push("assessment:unsupported_judgment_downgraded");
+
+  // ---------- 6. Output validation ----------
   let action: Action = output.next_action;
   const coerced = !decision.allowedActions.includes(action) || (!!decision.forcedAction && decision.forcedAction !== action);
   if (!decision.allowedActions.includes(action)) action = decision.forcedAction ?? decision.allowedActions[0]!;
   if (decision.forcedAction) action = decision.forcedAction;
+  if (coerced) guardrails.push("output:action_coerced");
 
-  // 3b. Trích dẫn tài liệu: nhãn phải có trong lượt này VÀ quote có nguyên văn trong đoạn
-  const aliases = aliasMap(retrieved);
-  const validCites = new Map<string, Citation>();
-  for (const c of output.source_citations) {
-    const v = validateCitation(c.source, c.quote, aliases);
-    if (v) validCites.set(c.source.trim().toUpperCase(), v);
-  }
+  const fallbackText = "Mình chưa diễn đạt được ý này. Bạn thử nói lại cách bạn đang hiểu nhé?";
+  const outGuard = await step("output_validation", (span) => {
+    let raw = output.assistant_text;
+    const leak = leaksSystemPrompt(raw);
+    if (leak) raw = fallbackText;
+    const sec = redactSecrets(raw);
+    const praise = stripUnsupportedPraise(sec.text, observedNow);
+    const rendered = renderCitationMarkers(sanitizeAssistantText(praise.text, fallbackText, long ? 3600 : 1800), validCites);
+    const prevQuestions = s.messages.filter((m) => m.role === "assistant").slice(-3).map((m) => m.text);
+    const repeated = isRepeatedQuestion(rendered.text, prevQuestions);
+    const socratic = s.state.mode === "reunderstand" && !isSupportAction(action);
+    const leakScore = socratic && s.rubric.length ? Math.max(...s.rubric.map((c) => answerOverlap(rendered.text, c.expectation))) : 0;
+    const flags = [
+      leak && "output:system_prompt_leak_blocked", sec.redacted && "output:secret_redacted", praise.removed && "output:unsupported_praise_removed",
+      repeated && "output:repeated_question", leakScore >= 0.6 && "output:possible_answer_leak",
+    ].filter(Boolean) as string[];
+    span.set({ flags, answer_overlap: Math.round(leakScore * 100) / 100 });
+    if (flags.length) trace.start("guardrail.output", "guardrail", span, { flags }).end();
+    return { rendered, repeated, flags };
+  });
+  guardrails.push(...outGuard.flags);
+  const assistantText = outGuard.rendered.text || fallbackText;
 
-  // 3c. Bằng chứng về người học: quote thật + (khi có tài liệu) phán đoán phải có căn cứ
-  const supportBefore = s.state.supportCount;
-  const newEvidence: Evidence[] = [];
-  let dropped = 0, downgraded = 0;
-  const rubricIds = new Set(s.rubric.map((c) => c.id));
-  for (const e of output.observed_evidence) {
-    const msgId = findQuoteSource(e.quote, s.messages);
-    if (!msgId) { dropped++; continue; }
-    const criterionId = e.criterion_id && rubricIds.has(e.criterion_id.trim().toUpperCase()) ? e.criterion_id.trim().toUpperCase() : null;
-    const sourceCitation = e.source_ref ? validateCitation(e.source_ref.source, e.source_ref.quote, aliases) : null;
-    if (sourceCitation && e.source_ref) validCites.set(e.source_ref.source.trim().toUpperCase(), sourceCitation);
-    let status = e.status;
-    if (grounded) {
-      // Nói người học SAI thì phải chỉ ra được tài liệu nói gì; nói ĐÚNG thì phải gắn tiêu chí hoặc nguồn.
-      if (status === "contradicted" && !sourceCitation) { status = "unclear"; downgraded++; }
-      else if (status === "observed" && !criterionId && !sourceCitation) { status = "unclear"; downgraded++; }
+  // ---------- 7. Reassessment: cập nhật trạng thái học (code quyết định) ----------
+  await step("reassessment", (span) => {
+    const st = s.state;
+    const prevGapId = st.currentGapId;
+    if (focusGap) {
+      if (focusGap.id === prevGapId) {
+        st.roundOnSameGap = observedNow ? 0 : st.roundOnSameGap + 1;
+      } else {
+        st.currentGapId = focusGap.id;
+        st.roundOnSameGap = 1;
+        st.hintLevel = 0; // điểm vướng mới → bắt đầu lại từ gợi ý mức thấp
+      }
+    } else if (prevGapId && s.gaps.find((g) => g.id === prevGapId)?.status !== "open") {
+      st.currentGapId = null;
+      st.roundOnSameGap = 0;
     }
-    if (s.evidence.some((x) => x.messageId === msgId && x.criterion === e.criterion && x.status === status)) continue;
-    newEvidence.push({
-      id: id(), messageId: msgId, criterion: e.criterion, claim: e.claim, quote: e.quote, status,
-      assisted: supportBefore > 0, supportLevelAtTime: s.state.hintLevel,
-      criterionId, sourceCitation, context: answerContext(s.messages, msgId), createdAt: nowIso,
-    });
-  }
-  s.evidence.push(...newEvidence);
-  const observedNow = newEvidence.some((e) => e.status === "observed");
 
-  // 3c. Gap: tạo/khớp gap; chỉ cho "resolved" khi có observed evidence thật ở lượt này
-  if (observedNow) {
-    for (const r of output.resolved_gaps) {
-      const g = s.gaps.find((x) => x.status === "open" && sameConcept(x.concept, r));
-      if (g) g.status = g.supportLevel > 0 || supportBefore > 0 ? "resolved_after_support" : "resolved";
+    // Mức hỗ trợ — tăng dần, không nhảy cóc trừ khi người dùng yêu cầu
+    if (isSupportAction(action)) {
+      const implied = action === "give_hint" ? Math.max(1, Math.min(2, output.hint_level)) : action === "give_example" ? 2 : 3;
+      st.hintLevel = Math.min(3, Math.max(st.hintLevel, decision.targetHintLevel, implied)) as 0 | 1 | 2 | 3;
+      st.supportCount += 1;
+      const g = s.gaps.find((x) => x.id === st.currentGapId);
+      if (g) g.supportLevel = Math.max(g.supportLevel, st.hintLevel);
+      if (action === "show_answer") st.answerShown = true;
+      st.roundOnSameGap = 0;
     }
-  }
-  let focusGap: Gap | null = null;
-  for (const c of output.suspected_gaps) {
-    let g = s.gaps.find((x) => sameConcept(x.concept, c) && x.status !== "resolved" && x.status !== "resolved_after_support");
-    if (!g) {
-      g = { id: id(), concept: c, status: "open", supportLevel: 0 };
-      s.gaps.push(g);
-    } else if (g.status === "skipped") {
-      g.status = "open";
-    }
-    focusGap ??= g;
-  }
 
-  const st = s.state;
-  const prevGapId = st.currentGapId;
-  if (focusGap) {
-    if (focusGap.id === prevGapId) {
-      st.roundOnSameGap = observedNow ? 0 : st.roundOnSameGap + 1;
-    } else {
-      st.currentGapId = focusGap.id;
-      st.roundOnSameGap = 1;
-      st.hintLevel = 0; // điểm vướng mới → bắt đầu lại từ gợi ý mức thấp
-    }
-  } else if (prevGapId && s.gaps.find((g) => g.id === prevGapId)?.status !== "open") {
-    st.currentGapId = null;
-    st.roundOnSameGap = 0;
-  }
+    // Chuyển phase: chỉ sang transfer/reflect khi CÓ bằng chứng observed thật (không kết luận "đã hiểu" bằng cảm tính)
+    const openGaps = s.gaps.filter((g) => g.status === "open");
+    if (st.currentGapId && openGaps.length) st.phase = "repair";
+    else if (output.ready_for_transfer && observedNow) st.phase = st.phase === "transfer" ? "reflect" : "transfer";
+    else if (st.phase === "transfer" && observedNow && openGaps.length === 0) st.phase = "reflect";
+    else if (st.phase === "entry") st.phase = st.mode === "reunderstand" ? "baseline" : "probe";
+    else if (st.phase === "baseline" || st.phase === "repair") st.phase = "probe";
 
-  // 3d. Mức hỗ trợ — tăng dần, không nhảy cóc trừ khi người dùng yêu cầu
-  if (isSupportAction(action)) {
-    const implied = action === "give_hint" ? Math.max(1, Math.min(2, output.hint_level)) : action === "give_example" ? 2 : 3;
-    st.hintLevel = Math.min(3, Math.max(st.hintLevel, decision.targetHintLevel, implied)) as 0 | 1 | 2 | 3;
-    st.supportCount += 1;
-    const g = s.gaps.find((x) => x.id === st.currentGapId);
-    if (g) g.supportLevel = Math.max(g.supportLevel, st.hintLevel);
-    if (action === "show_answer") st.answerShown = true;
-    st.roundOnSameGap = 0; // đã đổi sang hình thức hỗ trợ → đếm lại số vòng "chưa tiến triển"
-  }
+    st.agentLedRounds = intent ? 0 : st.agentLedRounds + 1;
+    st.pendingModeSuggestion = output.suggest_mode_switch && output.suggest_mode_switch !== st.mode ? output.suggest_mode_switch : null;
+    st.repeatedQuestion = outGuard.repeated;
+    span.set({ phase: st.phase, hint_level: st.hintLevel, round_on_same_gap: st.roundOnSameGap });
+  });
 
-  // 3e. Chuyển phase (code quyết định, model chỉ gợi ý ready_for_transfer)
-  const openGaps = s.gaps.filter((g) => g.status === "open");
-  if (st.currentGapId && openGaps.length) st.phase = "repair";
-  else if (output.ready_for_transfer && observedNow) st.phase = st.phase === "transfer" ? "reflect" : "transfer";
-  else if (st.phase === "transfer" && observedNow && openGaps.length === 0) st.phase = "reflect";
-  else if (st.phase === "entry") st.phase = st.mode === "reunderstand" ? "baseline" : "probe";
-  else if (st.phase === "baseline" || st.phase === "repair") st.phase = "probe";
-
-  st.agentLedRounds = intent ? 0 : st.agentLedRounds + 1;
-  st.pendingModeSuggestion = output.suggest_mode_switch && output.suggest_mode_switch !== st.mode ? output.suggest_mode_switch : null;
-
-  const fallbackText = "Mình chưa diễn đạt được ý này. Cậu thử nói lại cách cậu đang hiểu nhé?";
-  const rendered = renderCitationMarkers(sanitizeAssistantText(output.assistant_text, fallbackText), validCites);
-  const assistantText = rendered.text || fallbackText;
-  s.messages.push({ id: id(), role: "assistant", text: assistantText, action, intent: null, citations: rendered.citations, createdAt: nowIso });
+  s.messages.push({ id: id(), role: "assistant", text: assistantText, action, intent: null, citations: outGuard.rendered.citations, createdAt: nowIso });
   s.updatedAt = nowIso;
 
   vSpan.set({
     action_coerced: coerced, final_action: action,
     evidence_proposed: output.observed_evidence.length, evidence_kept: newEvidence.length, evidence_dropped_fake_quote: dropped,
     evidence_downgraded_no_source: downgraded,
-    citations_proposed: output.source_citations.length, citations_valid: validCites.size, citations_rendered: rendered.citations.length,
-    gaps_open: s.gaps.filter((g) => g.status === "open").length,
+    citations_proposed: output.source_citations.length, citations_valid: validCites.size, citations_rendered: outGuard.rendered.citations.length,
+    gaps_open: s.gaps.filter((g) => g.status === "open").length, guardrails, llm_calls: budget.used,
   }).end();
+  finishMeta();
 
   return {
     session: s,
     result: baseResult(s, id(), action, assistantText, newEvidence, { provider, model }, {
       quickReplies: quickRepliesFor(s),
-      citations: rendered.citations,
+      citations: outGuard.rendered.citations,
+      toolsUsed,
+      guardrails,
     }),
   };
+}
+
+const PAST_REF = /(lần trước|hôm trước|buổi trước|tuần trước|trước đây|đã học|ôn lại|lịch sử học|chỗ (em|mình|tôi) (hay )?(sai|vướng|yếu)|điểm yếu)/i;
+const DOC_REF = /(tài liệu|slide|giáo trình|bài giảng|sách|ghi chú|file|trang \d+|chương \d+)/i;
+
+/**
+ * Code chỉ MỞ những công cụ có ích trong ngữ cảnh (tiết kiệm token, tránh gọi thừa); model tự quyết có dùng hay không.
+ *  - search_learning_materials: người học có tài liệu trong thư viện VÀ (phiên chưa gắn tài liệu hoặc họ nhắc tới tài liệu).
+ *  - get_knowledge_gaps / get_learning_history: lượt đầu của người đã từng học, hoặc khi họ nhắc tới buổi trước.
+ */
+async function availableTools(s: Session, text: string, store: Store): Promise<ToolName[]> {
+  const out: ToolName[] = [];
+  try {
+    if (!s.documentIds.length || DOC_REF.test(text)) {
+      if ((await store.listDocuments(s.userId)).length > 0) out.push("search_learning_materials");
+    }
+    if (PAST_REF.test(text) || (s.state.turnCount <= 1 && (await store.listSessions(s.userId, 3)).some((x) => x.id !== s.id))) {
+      out.push("get_knowledge_gaps", "get_learning_history");
+    }
+  } catch {
+    /* store lỗi → không mở công cụ, lượt vẫn chạy */
+  }
+  return out;
 }
 
 /** Câu trả lời này đáp lại câu hỏi gì của agent: tự giải thích hay vận dụng tình huống mới? */
@@ -386,42 +574,57 @@ function answerContext(messages: Message[], userMsgId: string): Evidence["contex
   return "other";
 }
 
-async function callTurnModel(
-  router: ModelRouter, system: string, user: string, allowed: Action[], span: SpanHandle,
-): Promise<{ output: TurnOutput; provider: string; model: string; attempts: number }> {
+interface CallOpts {
+  system: string; user: string; allowed: Action[]; span: SpanHandle; budget: { used: number; max: number };
+  tools?: import("../providers/types").ToolDeclaration[]; toolMode: "AUTO" | "NONE"; exchanges: ToolExchange[]; maxOutputTokens: number;
+}
+type CallOutcome =
+  | { kind: "final"; output: TurnOutput; provider: string; model: string; attempts: number }
+  | { kind: "tools"; calls: import("../providers/types").ToolCall[]; rawModelParts?: unknown[] };
+
+async function callTurnModel(router: ModelRouter, o: CallOpts): Promise<CallOutcome> {
+  const gen = async (req: Omit<import("../providers/types").LLMRequest, "tools" | "toolExchanges" | "toolMode">) => {
+    if (o.budget.used >= o.budget.max) throw new AgentUnavailableError("LLM_CALL_BUDGET_EXCEEDED");
+    o.budget.used++;
+    return router.generate({ ...req, tools: o.tools, toolExchanges: o.exchanges.length ? o.exchanges : undefined, toolMode: o.tools ? o.toolMode : undefined }, o.span);
+  };
   let res;
   try {
-    res = await router.generate({ system, user, maxOutputTokens: 900, purpose: "turn" }, span);
+    res = await gen({ system: o.system, user: o.user, maxOutputTokens: o.maxOutputTokens, purpose: o.exchanges.length ? "turn_after_tools" : "turn" });
   } catch (e) {
+    if (e instanceof AgentUnavailableError) throw e;
     throw new AgentUnavailableError((e as Error).message);
   }
+  if (res.toolCalls?.length && o.toolMode === "AUTO") return { kind: "tools", calls: res.toolCalls, rawModelParts: res.rawModelParts };
   const first = tryParse(res.text);
-  if (first && allowed.includes(first.next_action)) return { output: first, provider: res.provider, model: res.model, attempts: 1 };
-  span.set({ repair_reason: first ? "action_not_allowed" : "invalid_json" });
+  if (first && o.allowed.includes(first.next_action)) return { kind: "final", output: first, provider: res.provider, model: res.model, attempts: 1 };
+  o.span.set({ repair_reason: first ? "action_not_allowed" : "invalid_json" });
 
-  // Một lần sửa: JSON hỏng hoặc chọn hành động ngoài tập cho phép (theo fallback policy).
-  try {
-    const fix = first
-      ? await router.generate({
-          system,
-          user: `${user}\n\nLần trước bạn chọn next_action="${first.next_action}" — KHÔNG hợp lệ. Viết lại toàn bộ lượt với next_action thuộc ${JSON.stringify(allowed)}.`,
-          maxOutputTokens: 900,
-          purpose: "repair",
-        }, span)
-      : await router.generate({
-          system: "Sửa đoạn sau thành MỘT object JSON hợp lệ đúng schema đã yêu cầu. Chỉ trả JSON.",
-          user: `${system.slice(system.indexOf("ĐẦU RA"))}\nallowed_actions: ${JSON.stringify(allowed)}\n\nĐOẠN CẦN SỬA:\n${res.text.slice(0, 3000)}`,
-          maxOutputTokens: 900,
-          temperature: 0,
-          purpose: "repair",
-        }, span);
-    const second = tryParse(fix.text);
-    if (second) return { output: second, provider: fix.provider, model: fix.model, attempts: 2 };
-  } catch {
-    /* rơi xuống bên dưới */
+  // Một lần sửa (nếu còn ngân sách gọi model): JSON hỏng hoặc chọn hành động ngoài tập cho phép.
+  if (o.budget.used < o.budget.max) {
+    try {
+      const fix = first
+        ? await gen({
+            system: o.system,
+            user: `${o.user}\n\nLần trước bạn chọn next_action="${first.next_action}" — KHÔNG hợp lệ. Viết lại toàn bộ lượt với next_action thuộc ${JSON.stringify(o.allowed)}.`,
+            maxOutputTokens: o.maxOutputTokens,
+            purpose: "repair",
+          })
+        : await gen({
+            system: "Sửa đoạn sau thành MỘT object JSON hợp lệ đúng schema đã yêu cầu. Chỉ trả JSON.",
+            user: `${o.system.slice(o.system.indexOf("ĐẦU RA"))}\nallowed_actions: ${JSON.stringify(o.allowed)}\n\nĐOẠN CẦN SỬA:\n${res.text.slice(0, 3000)}`,
+            maxOutputTokens: o.maxOutputTokens,
+            temperature: 0,
+            purpose: "repair",
+          });
+      const second = tryParse(fix.text);
+      if (second) return { kind: "final", output: second, provider: fix.provider, model: fix.model, attempts: 2 };
+    } catch {
+      /* rơi xuống bên dưới */
+    }
   }
   // Còn bản parse được nhưng sai action → dùng, engine sẽ ép nhãn về tập hợp lệ.
-  if (first) return { output: first, provider: res.provider, model: res.model, attempts: 2 };
+  if (first) return { kind: "final", output: first, provider: res.provider, model: res.model, attempts: 2 };
   throw new AgentUnavailableError("INVALID_MODEL_OUTPUT");
 }
 

@@ -27,6 +27,8 @@ export interface Env {
   LIMIT_SESSIONS_PER_DAY?: string;
   LIMIT_TURNS_PER_SESSION?: string;
   LIMIT_INPUT_CHARS?: string;
+  MAX_TOOL_ROUNDS?: string;        // số vòng model gọi công cụ / lượt (mặc định 1)
+  MAX_LLM_CALLS_PER_TURN?: string; // trần lời gọi model / lượt (mặc định 3)
   // RAG
   MODEL_EMBED?: string;
   EMBED_DIMS?: string;

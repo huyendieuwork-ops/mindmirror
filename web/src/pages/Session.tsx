@@ -5,6 +5,8 @@ import { HINT_LABEL, INTENT_LABEL, PHASE_LABEL, STATUS_COLOR, STATUS_LABEL } fro
 import { invalidate, MODE_PAGE, useLearningData } from "../lib/data";
 import MirrorCardView from "../components/MirrorCardView";
 import TracePanel from "../components/TracePanel";
+import RichText from "../components/RichText";
+import { pref } from "../lib/data";
 import { Logo } from "../components/Layout";
 import { Icon, PageHeader } from "../components/ui";
 
@@ -24,6 +26,8 @@ export default function SessionPage() {
   const [active, setActive] = useState<string | null>(null);
   const [tab, setTab] = useState<"sources" | "trace">("sources");
   const [panel, setPanel] = useState(false);
+  // "Agent đã làm gì" (trace kỹ thuật) chỉ hiện ở Chế độ kỹ thuật — bật trong Cài đặt, dành cho demo/phát triển.
+  const devMode = pref<boolean>("devMode", false);
   const [version, setVersion] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
   const { docs, folders } = useLearningData();
@@ -165,14 +169,14 @@ export default function SessionPage() {
               </section>
             )}
             <div className="flex gap-1 rounded-lg bg-paper p-1 text-sm" role="tablist">
-              {(["sources", "trace"] as const).map((t) => (
+              {(devMode ? (["sources", "trace"] as const) : (["sources"] as const)).map((t) => (
                 <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`flex-1 rounded-md px-3 py-1.5 ${tab === t ? "bg-sheet font-semibold text-ink shadow-sm" : "text-muted"}`}>
                   {t === "sources" ? "Từ tài liệu" : "Agent đã làm gì"}
                 </button>
               ))}
             </div>
             <div className="mt-4">
-              {tab === "sources" ? (
+              {tab === "sources" || !devMode ? (
                 allCitations.length ? (
                   <ul className="space-y-4">
                     {allCitations.map(({ key, c, n }) => (
@@ -234,23 +238,12 @@ function Message({ m, active, onCite }: { m: Msg; active: string | null; onCite:
         ) : null;
       });
     });
-  const lines = m.text.split("\n");
-  const blocks: ReactNode[] = [];
-  let bullets: string[] = [];
-  const flush = (k: number) => { if (bullets.length) { blocks.push(<ul key={`u${k}`} className="ml-5 list-disc space-y-1">{bullets.map((b, i) => <li key={i}>{inline(b, k * 100 + i)}</li>)}</ul>); bullets = []; } };
-  lines.forEach((l, k) => {
-    const b = /^\s*[-•*]\s+(.*)$/.exec(l);
-    if (b) { bullets.push(b[1] ?? ""); return; }
-    flush(k);
-    if (l.trim()) blocks.push(<p key={k}>{inline(l, k)}</p>);
-  });
-  flush(lines.length);
   return (
     <li className="flex gap-3">
       <Logo size={32} className="mt-0.5 shrink-0 rounded-full" />
       <div className="min-w-0 max-w-[72ch]">
         <p className="mb-1.5 text-sm font-semibold text-ink">MindMirror</p>
-        <div className="space-y-2.5 text-[0.95rem] leading-[1.7] text-ink/90">{blocks}</div>
+        <div className="space-y-2.5 text-[0.95rem] leading-[1.7] text-ink/90"><RichText text={m.text} renderInline={inline} /></div>
       </div>
     </li>
   );

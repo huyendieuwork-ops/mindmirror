@@ -17,6 +17,7 @@ import { exportTrace, Trace, type TraceExporter } from "../obs/tracer";
 import { McpClient, McpError } from "../mcp/client";
 import { ConnectorError, McpLibrarySource, discoverTools } from "../mcp/library-source";
 import { checkMcpUrl, decryptSecret, encryptSecret } from "../mcp/crypto";
+import { handleMcp } from "../mcp/server";
 
 type Vars = { userId: string; store: Store };
 
@@ -80,7 +81,7 @@ export function createApp(over: AppOverrides = {}) {
     const allowed = (c.env?.ALLOWED_ORIGIN ?? "*").split(",").map((o) => o.trim()).filter(Boolean);
     return cors({
       origin: (origin) => (allowed.includes("*") ? origin || "*" : allowed.includes(origin) ? origin : null),
-      allowHeaders: ["authorization", "content-type", "x-dev-user"],
+      allowHeaders: ["authorization", "content-type", "x-dev-user", "mcp-protocol-version", "mcp-session-id"],
       allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
       maxAge: 600,
     })(c, next);
@@ -99,6 +100,33 @@ export function createApp(over: AppOverrides = {}) {
       tracing: [env.LANGFUSE_PUBLIC_KEY ? "langfuse" : null, env.LANGSMITH_API_KEY ? "langsmith" : null].filter(Boolean),
       limits: { sessionsPerDay: num(env.LIMIT_SESSIONS_PER_DAY, 3), turnsPerSession: num(env.LIMIT_TURNS_PER_SESSION, 12), inputChars: num(env.LIMIT_INPUT_CHARS, 3000) },
     });
+  });
+
+  // ---------- MCP server: công cụ chỉ-đọc của MindMirror cho MCP client bên ngoài ----------
+  app.get("/mcp", (c) => c.json({ error: "method_not_allowed", hint: "POST JSON-RPC 2.0 (MCP Streamable HTTP, không hỗ trợ SSE stream)" }, 405));
+  app.post("/mcp", async (c) => {
+    const env: Env = c.env ?? {};
+    let userId: string;
+    try {
+      userId = await (over.authenticate ?? authenticate)(c.req.raw, env);
+    } catch (e) {
+      if (e instanceof AuthError) return c.json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "unauthorized" } }, 401);
+      throw e;
+    }
+    const store = over.store ?? (env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE_KEY ? new SupabaseStore(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY) : devMemory);
+    const body = await c.req.json().catch(() => null);
+    if (body === null) return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400);
+    const trace = new Trace("mcp.request", { userId, tags: [env.APP_ENV ?? "dev", "mcp"], contentMode: contentMode(env) });
+    try {
+      const r = await handleMcp(body, { userId, store, retriever: new Retriever(store, embedderFor(env)), session: null, trace });
+      if (r.body === null) return c.body(null, 202);
+      return c.json(r.body, r.status as 200);
+    } finally {
+      trace.finish();
+      await store.saveTrace({ traceId: trace.id, userId, sessionId: null, name: "mcp.request", summary: trace.summary(), createdAt: new Date().toISOString() }).catch(() => {});
+      const p = exportTrace(trace, over.exporters ?? buildExporters(env));
+      try { c.executionCtx.waitUntil(p); } catch { await p; }
+    }
   });
 
   app.use("/api/*", async (c, next) => {
@@ -240,11 +268,13 @@ export function createApp(over: AppOverrides = {}) {
     const trace = newTrace(env, "agent.turn", userId, id, intent ? [`intent:${intent}`] : []);
     try {
       const { session: next, result } = await runTurn(session, { text, intent }, {
-        core, light, trace, retriever: session.documentIds.length ? new Retriever(store, embedderFor(env)) : null,
+        core, light, trace, retriever: new Retriever(store, embedderFor(env)),
+        tools: { store }, maxInputChars: maxChars,
+        maxToolRounds: num(env.MAX_TOOL_ROUNDS, 1), maxLlmCallsPerTurn: num(env.MAX_LLM_CALLS_PER_TURN, 3),
         limits: { turnsPerSession: num(env.LIMIT_TURNS_PER_SESSION, 12), maxRoundsSameGap: 2, maxAgentLedRounds: 6 },
       });
       await store.saveSession(next);
-      if (result.card) await store.saveCard(next.id, userId, result.card);
+      if (result.card && !result.cardSaved) await store.saveCard(next.id, userId, result.card);
       await store.saveTurnResult(id, clientTurnId, result);
       return c.json(result);
     } catch (e) {

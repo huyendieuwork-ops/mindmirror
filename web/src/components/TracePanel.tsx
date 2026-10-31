@@ -2,37 +2,57 @@ import { useEffect, useState } from "react";
 import { api, type TraceRecord } from "../lib/api";
 
 const STEP: Record<string, string> = {
-  "agent.turn": "Cả lượt", "policy.decide": "Chọn bước tiếp theo", "rag.retrieve": "Tìm trong tài liệu",
-  "agent.respond": "Soạn phản hồi", "validate.output": "Kiểm chứng bằng chứng", "card.build": "Tạo thẻ",
-  "agent.plan": "Lập tiêu chí từ tài liệu", "rag.ingest": "Nhập tài liệu", "rag.embed": "Tạo embedding",
+  input_validation: "Kiểm tra đầu vào", intent_understanding: "Hiểu ý định", policy_decision: "Chọn bước tiếp theo",
+  evidence_retrieval: "Truy xuất bằng chứng", knowledge_analysis: "Phân tích & đặt câu hỏi", misconception_detection: "Phát hiện hiểu lầm",
+  output_validation: "Kiểm duyệt đầu ra", reassessment: "Đánh giá lại", session_summary: "Tổng kết phiên",
 };
+const TOOL: Record<string, string> = {
+  search_learning_materials: "Tìm trong thư viện", retrieve_document_context: "Lấy ngữ cảnh tài liệu phiên",
+  get_learning_history: "Xem lịch sử học", get_knowledge_gaps: "Xem lỗ hổng đã ghi", save_session_summary: "Lưu thẻ tổng kết",
+};
+const WHO: Record<string, string> = { model: "model tự gọi", policy: "workflow gọi", mcp: "qua MCP" };
 
-/** Observability cho người dùng/giám khảo: agent đã làm những bước gì, mất bao lâu, tốn bao nhiêu token. */
+/** Observability (chỉ hiện ở Chế độ kỹ thuật): bước workflow, công cụ, guardrail, model, token, chi phí ước tính. */
 export default function TracePanel({ sessionId, version }: { sessionId: string; version: number }) {
   const [items, setItems] = useState<TraceRecord[]>([]);
   useEffect(() => { api.traces(sessionId).then((r) => setItems(r.items)).catch(() => {}); }, [sessionId, version]);
   if (!items.length) return <p className="text-sm text-muted">Chưa có lượt nào.</p>;
-  const total = items.reduce((a, t) => ({ tok: a.tok + t.summary.inputTokens + t.summary.outputTokens, cost: a.cost + t.summary.costUsd }), { tok: 0, cost: 0 });
+  const total = items.reduce((a, t) => ({ tok: a.tok + t.summary.inputTokens + t.summary.outputTokens, cost: a.cost + t.summary.costUsd, calls: a.calls + t.summary.llmCalls }), { tok: 0, cost: 0, calls: 0 });
   return (
     <div className="text-sm">
-      <p className="text-muted">{items.length} lần xử lý · {total.tok.toLocaleString("vi")} token · ước tính ${total.cost.toFixed(4)}</p>
-      <ol className="mt-3 space-y-3">
-        {items.slice().reverse().map((t) => (
-          <li key={t.traceId} className="border-l-2 border-mirror/30 pl-3">
-            <p className="font-medium text-ink">
-              {new Date(t.createdAt).toLocaleTimeString("vi")} — {t.summary.totalMs ?? "?"} ms
-              {t.summary.fallbacks > 0 && <span className="text-rust">, đã chuyển model dự phòng</span>}
-            </p>
-            <ul className="mt-1 text-muted">
-              {t.summary.steps.filter((s) => s.name !== "agent.turn").map((s, i) => (
-                <li key={i} className={s.status === "error" ? "text-rust" : ""}>
-                  {STEP[s.name] ?? s.name.replace("llm.", "Gọi model ")}: {s.ms} ms
-                </li>
-              ))}
-            </ul>
-            {t.summary.errors.length > 0 && <p className="text-rust">Lỗi: {t.summary.errors.map((e) => `${e.span} (${e.error})`).join(", ")}</p>}
-          </li>
-        ))}
+      <p className="text-muted">{items.length} lần xử lý · {total.calls} lần gọi model · {total.tok.toLocaleString("vi")} token · chi phí ước tính ${total.cost.toFixed(4)}</p>
+      <p className="mt-1 text-[11px] text-muted">Chi phí là ước tính theo bảng giá công khai; free tier không bị tính phí — hoá đơn thật xem ở Google AI Studio.</p>
+      <ol className="mt-3 space-y-4">
+        {items.slice().reverse().map((t) => {
+          const s = t.summary;
+          return (
+            <li key={t.traceId} className="border-l-2 border-mirror/30 pl-3">
+              <p className="font-medium text-ink">
+                {new Date(t.createdAt).toLocaleTimeString("vi")} — {s.totalMs ?? "?"} ms · {s.llmCalls} lần gọi{s.models?.length ? ` (${s.models.join(", ")})` : ""}
+                {s.retries ? <span className="text-rust"> · thử lại {s.retries}</span> : null}
+                {s.fallbacks > 0 && <span className="text-rust"> · model dự phòng</span>}
+              </p>
+              <p className="text-[11px] text-muted">trace {t.traceId.slice(0, 8)} · {s.inputTokens}+{s.outputTokens} token · ~${s.costUsd.toFixed(5)}</p>
+              {s.workflow?.length ? (
+                <ul className="mt-1.5 flex flex-wrap gap-1">
+                  {s.workflow.map((w, i) => (
+                    <li key={i} className={`rounded-md px-1.5 py-0.5 text-[11px] ${w.status === "error" ? "bg-rust/10 text-rust" : "bg-paper text-muted"}`}>{STEP[w.step] ?? w.step} {w.ms}ms</li>
+                  ))}
+                </ul>
+              ) : null}
+              {s.tools?.length ? (
+                <ul className="mt-1.5 space-y-0.5">
+                  {s.tools.map((x, i) => (
+                    <li key={i} className={x.ok ? "text-ink" : "text-rust"}>🔧 {TOOL[x.name] ?? x.name} <span className="text-muted">({WHO[x.initiator ?? ""] ?? x.initiator}, {x.ms} ms{x.error ? `, lỗi ${x.error}` : ""})</span></li>
+                  ))}
+                </ul>
+              ) : null}
+              {s.retrieval?.length ? <p className="mt-1 text-muted">📚 Truy xuất: {s.retrieval.map((r) => `${r.hits} đoạn (${r.method})`).join(", ")}</p> : null}
+              {s.guardrails?.length ? <p className="mt-1 text-[#B7791F]">🛡️ Guardrail: {s.guardrails.join(", ")}</p> : null}
+              {s.errors.length > 0 && <p className="mt-1 text-rust">Lỗi: {s.errors.map((e) => `${e.span} (${e.error})`).join(", ")}</p>}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

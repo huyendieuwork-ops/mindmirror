@@ -15,6 +15,13 @@ jobs:
       - run: npm test
       # Retrieval eval chạy offline (không tốn quota) — chặn merge nếu RAG tụt chất lượng
       - run: npm run eval -- --suite retrieval --ci
+      # Agent evals offline (guardrail, tool/permission, RAG/citation, workflow) — deterministic, 0 API call
+      - run: npm run eval:agent -- --ci
+      # Agent evals với model thật: giới hạn 24 lời gọi, giãn cách 4.2s (free tier 15 RPM); chỉ báo cáo, không chặn merge
+      - if: env.HAS_GEMINI == 'true'
+        run: npm run eval:agent -- --live --max-calls 24
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       # Eval có model thật: chỉ chạy khi có secret (vd nhánh main / chạy tay)
       - if: env.HAS_GEMINI == 'true'
         run: npm run eval -- --suite judgment --runs 3 --ci
