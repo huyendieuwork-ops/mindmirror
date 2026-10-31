@@ -10,7 +10,9 @@ import { searchText } from "../rag/text";
 export class SupabaseStore implements Store {
   private db: SupabaseClient;
   constructor(url: string, serviceRoleKey: string) {
-    this.db = createClient(url, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    // Bỏ khoảng trắng/ký tự vô hình (hay dính khi copy-paste secret) — tránh lỗi "Invalid header value".
+    const key = serviceRoleKey.replace(/[^\x21-\x7E]/g, "");
+    this.db = createClient(url.trim(), key, { auth: { persistSession: false, autoRefreshToken: false } });
   }
 
   async createSession(s: Session) {
