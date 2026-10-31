@@ -101,3 +101,26 @@ jobs:
             echo ""
             echo "Chế độ: \`${{ steps.cfg.outputs.app_env }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tên miền ngắn (Cloudflare Pages)
+        id: pages
+        if: env.HAS_CF == 'true' && steps.deploy.outputs.url != ''
+        working-directory: pages-proxy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAGES_NAME: ${{ vars.PAGES_NAME || 'mindmirror' }}
+        run: |
+          echo "export default '${{ steps.deploy.outputs.url }}';" > target.js
+          W=../api/node_modules/.bin/wrangler
+          $W pages project create "$PAGES_NAME" --production-branch main || echo "Project đã tồn tại"
+          $W pages deploy public --project-name "$PAGES_NAME" --branch main --commit-dirty=true
+          SUB=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PAGES_NAME" \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).result.subdomain))')
+          for i in 1 2 3 4 5 6 7 8; do curl -fsS "https://$SUB/health" && break || sleep 10; done
+          echo "url=https://$SUB" >> "$GITHUB_OUTPUT"
+          {
+            echo ""
+            echo "**Địa chỉ ngắn:** https://$SUB"
+          } >> "$GITHUB_STEP_SUMMARY"
