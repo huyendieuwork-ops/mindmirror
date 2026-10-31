@@ -1,5 +1,5 @@
 import type { Chunk, LibraryDocument, MirrorCard, RetrievedChunk, Session, TurnResult, UserSettings } from "../agent/types";
-import type { ChunkQuery, ConnectorRecord, SessionListItem, Store, TraceRecord, UsageEntry } from "./types";
+import type { ChunkQuery, ConnectorRecord, FolderRecord, SessionListItem, Store, TraceRecord, UsageEntry } from "./types";
 import { bm25Rank, rrf, vectorRank } from "../rag/hybrid";
 
 /** Store trong bộ nhớ — cho test, CLI và `wrangler dev` khi chưa nối Supabase. */
@@ -12,6 +12,7 @@ export class MemoryStore implements Store {
   documents = new Map<string, LibraryDocument>();
   chunks = new Map<string, Chunk[]>(); // documentId → chunks
   connectors = new Map<string, ConnectorRecord>();
+  folders = new Map<string, FolderRecord>();
   traces: TraceRecord[] = [];
 
   async createSession(s: Session) { this.sessions.set(s.id, structuredClone(s)); }
@@ -47,6 +48,7 @@ export class MemoryStore implements Store {
       this.settings.delete(userId);
       for (const d of await this.listDocuments(userId)) await this.deleteDocument(userId, d.id);
       for (const c of await this.listConnectors(userId)) this.connectors.delete(c.id);
+      for (const [id, f] of this.folders) if (f.userId === userId) this.folders.delete(id);
       this.traces = this.traces.filter((t) => t.userId !== userId);
     }
   }
@@ -81,6 +83,25 @@ export class MemoryStore implements Store {
       chunk: r.chunk, documentTitle: titles.get(r.chunk.documentId) ?? "", score: r.score,
       lexicalRank: r.ranks[0] ?? null, vectorRank: r.ranks[1] ?? null,
     }));
+  }
+
+  // ---- Thư mục ----
+  async listFolders(userId: string) {
+    return [...this.folders.values()].filter((f) => f.userId === userId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((f) => structuredClone(f));
+  }
+  async saveFolder(f: FolderRecord) { this.folders.set(f.id, structuredClone(f)); }
+  async deleteFolder(userId: string, id: string) {
+    const f = this.folders.get(id);
+    if (!f || f.userId !== userId) return false;
+    this.folders.delete(id);
+    for (const d of this.documents.values()) if (d.userId === userId && d.folderId === id) d.folderId = null;
+    return true;
+  }
+  async setDocumentFolder(userId: string, documentId: string, folderId: string | null) {
+    const d = this.documents.get(documentId);
+    if (!d || d.userId !== userId) return false;
+    d.folderId = folderId;
+    return true;
   }
 
   async saveConnector(c: ConnectorRecord) { this.connectors.set(c.id, structuredClone(c)); }

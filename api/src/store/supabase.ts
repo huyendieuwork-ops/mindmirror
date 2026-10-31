@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Chunk, Evidence, Gap, LibraryDocument, Message, MirrorCard, RetrievedChunk, Session, TurnResult, UserSettings } from "../agent/types";
-import type { ChunkQuery, ConnectorRecord, SessionListItem, Store, TraceRecord, UsageEntry } from "./types";
+import type { ChunkQuery, ConnectorRecord, FolderRecord, SessionListItem, Store, TraceRecord, UsageEntry } from "./types";
 import { searchText } from "../rag/text";
 
 /**
@@ -156,6 +156,7 @@ export class SupabaseStore implements Store {
       await this.db.from("user_settings").delete().eq("user_id", userId);
       await this.db.from("ai_call_usage").delete().eq("user_id", userId);
       await this.db.from("documents").delete().eq("user_id", userId); // cascade chunks
+      await this.db.from("folders").delete().eq("user_id", userId);
       await this.db.from("connectors").delete().eq("user_id", userId);
       await this.db.from("agent_traces").delete().eq("user_id", userId);
     }
@@ -221,6 +222,27 @@ export class SupabaseStore implements Store {
   }
 
   // ---------- Connectors ----------
+  // ---- Thư mục (My Folder) ----
+  async listFolders(userId: string): Promise<FolderRecord[]> {
+    const { data, error } = await this.db.from("folders").select("*").eq("user_id", userId).order("created_at", { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({ id: r.id, userId: r.user_id, name: r.name, color: r.color, createdAt: r.created_at }));
+  }
+  async saveFolder(f: FolderRecord) {
+    const { error } = await this.db.from("folders").upsert({ id: f.id, user_id: f.userId, name: f.name, color: f.color, created_at: f.createdAt });
+    if (error) throw error;
+  }
+  async deleteFolder(userId: string, id: string) {
+    const { data, error } = await this.db.from("folders").delete().eq("user_id", userId).eq("id", id).select("id");
+    if (error) throw error;
+    return (data ?? []).length > 0;
+  }
+  async setDocumentFolder(userId: string, documentId: string, folderId: string | null) {
+    const { data, error } = await this.db.from("documents").update({ folder_id: folderId }).eq("user_id", userId).eq("id", documentId).select("id");
+    if (error) throw error;
+    return (data ?? []).length > 0;
+  }
+
   async saveConnector(c: ConnectorRecord) {
     const { error } = await this.db.from("connectors").upsert({
       id: c.id, user_id: c.userId, name: c.name, url: c.url, preset: c.preset, token_enc: c.tokenEnc, tools: c.tools, created_at: c.createdAt,
@@ -259,6 +281,7 @@ function docFromRow(r: any): LibraryDocument {
   return {
     id: r.id, userId: r.user_id, title: r.title, kind: r.kind, origin: r.origin, pageCount: r.page_count, chunkCount: r.chunk_count,
     embedded: r.embedded, contentHash: r.content_hash, warnings: r.warnings ?? [], createdAt: r.created_at,
+    folderId: r.folder_id ?? null,
   };
 }
 function connFromRow(r: any): ConnectorRecord {

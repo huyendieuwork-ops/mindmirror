@@ -35,6 +35,15 @@ export interface ConnectorRecord {
   createdAt: string;
 }
 
+/** Thư mục tài liệu (My Folder). */
+export interface FolderRecord {
+  id: string;
+  userId: string;
+  name: string;
+  color: string;
+  createdAt: string;
+}
+
 export interface TraceRecord {
   traceId: string;
   userId: string | null;
@@ -74,6 +83,12 @@ export interface Store {
   getDocuments(userId: string, ids: string[]): Promise<LibraryDocument[]>;
   findDocumentByHash(userId: string, hash: string): Promise<LibraryDocument | null>;
   deleteDocument(userId: string, id: string): Promise<boolean>;
+
+  // ---- Thư mục (tuỳ chọn: store cũ/test không cần cài) ----
+  listFolders?(userId: string): Promise<FolderRecord[]>;
+  saveFolder?(f: FolderRecord): Promise<void>;
+  deleteFolder?(userId: string, id: string): Promise<boolean>;
+  setDocumentFolder?(userId: string, documentId: string, folderId: string | null): Promise<boolean>;
   /** Tìm kiếm lai (từ khoá + vector) CHỈ trong tài liệu của userId. */
   searchChunks(userId: string, documentIds: string[], q: ChunkQuery, k: number): Promise<RetrievedChunk[]>;
 

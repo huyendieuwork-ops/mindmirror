@@ -292,6 +292,58 @@ export function createApp(over: AppOverrides = {}) {
     }
   });
 
+  // ---------- Thư mục tài liệu (My Folder) ----------
+  const FOLDER_COLORS = ["blue", "purple", "green", "amber", "pink", "teal"] as const;
+  const FolderBody = z.object({ name: z.string().trim().min(1).max(80), color: z.enum(FOLDER_COLORS).optional() });
+  const publicFolder = (f: { id: string; name: string; color: string; createdAt: string }) => ({ id: f.id, name: f.name, color: f.color, createdAt: f.createdAt });
+
+  app.get("/api/folders", async (c) => {
+    const items = (await c.var.store.listFolders?.(c.var.userId)) ?? [];
+    return c.json({ items: items.map(publicFolder) });
+  });
+
+  app.post("/api/folders", async (c) => {
+    const b = FolderBody.safeParse(await c.req.json().catch(() => ({})));
+    if (!b.success) return c.json({ error: "invalid_body" }, 400);
+    const { store, userId } = c.var;
+    if (!store.saveFolder || !store.listFolders) return c.json({ error: "not_supported" }, 501);
+    if ((await store.listFolders(userId)).length >= 50) return c.json({ error: "folder_limit" }, 400);
+    const f = { id: crypto.randomUUID(), userId, name: b.data.name, color: b.data.color ?? "blue", createdAt: new Date().toISOString() };
+    await store.saveFolder(f);
+    return c.json(publicFolder(f), 201);
+  });
+
+  app.patch("/api/folders/:id", async (c) => {
+    const b = FolderBody.partial().safeParse(await c.req.json().catch(() => ({})));
+    if (!b.success) return c.json({ error: "invalid_body" }, 400);
+    const { store, userId } = c.var;
+    if (!store.saveFolder || !store.listFolders) return c.json({ error: "not_supported" }, 501);
+    const f = (await store.listFolders(userId)).find((x) => x.id === c.req.param("id"));
+    if (!f) return c.json({ error: "not_found" }, 404);
+    const next = { ...f, name: b.data.name ?? f.name, color: b.data.color ?? f.color };
+    await store.saveFolder(next);
+    return c.json(publicFolder(next));
+  });
+
+  app.delete("/api/folders/:id", async (c) => {
+    const { store, userId } = c.var;
+    if (!store.deleteFolder) return c.json({ error: "not_supported" }, 501);
+    const ok = await store.deleteFolder(userId, c.req.param("id"));
+    return ok ? c.json({ deleted: true }) : c.json({ error: "not_found" }, 404);
+  });
+
+  /** Chuyển tài liệu vào thư mục (folder_id = null để bỏ khỏi thư mục). */
+  app.patch("/api/documents/:id", async (c) => {
+    const b = z.object({ folder_id: z.string().uuid().nullable() }).safeParse(await c.req.json().catch(() => ({})));
+    if (!b.success) return c.json({ error: "invalid_body" }, 400);
+    const { store, userId } = c.var;
+    if (!store.setDocumentFolder || !store.listFolders) return c.json({ error: "not_supported" }, 501);
+    const folderId = b.data.folder_id;
+    if (folderId && !(await store.listFolders(userId)).some((f) => f.id === folderId)) return c.json({ error: "folder_not_found" }, 404);
+    const ok = await store.setDocumentFolder(userId, c.req.param("id"), folderId);
+    return ok ? c.json({ id: c.req.param("id"), folderId }) : c.json({ error: "not_found" }, 404);
+  });
+
   app.get("/api/documents", async (c) => c.json({ items: await c.var.store.listDocuments(c.var.userId) }));
 
   app.delete("/api/documents/:id", async (c) => {

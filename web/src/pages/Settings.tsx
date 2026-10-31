@@ -1,66 +1,155 @@
-import { useEffect, useState } from "react";
-import { api, explain, type AppConfig, type Settings } from "../lib/api";
+import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { api, explain, type Settings } from "../lib/api";
+import { invalidate, pref, setPref } from "../lib/data";
+import { saveTheme, type Theme } from "../lib/theme";
+import { signOut } from "../lib/supabase";
+import type { UserInfo } from "../components/Layout";
+import { Avatar, Btn, Card, Icon, Modal, PageHeader, SelectBox, Toggle, type IconName } from "../components/ui";
 
-const GROUPS: { key: keyof Settings; title: string; options: [string, string, string][] }[] = [
-  { key: "aiStyle", title: "Phong cách trò chuyện", options: [["friendly", "Thân thiện", "Gần gũi, dễ hiểu"], ["concise", "Ngắn gọn", "Súc tích, vào trọng tâm"], ["academic", "Học thuật", "Có cấu trúc, dùng thuật ngữ"]] },
-  { key: "supportPreference", title: "Khi cậu gặp khó", options: [["socratic_first", "Gợi mở trước", "Hỏi để cậu tự nhận ra"], ["direct", "Giải thích trực tiếp", "Không kéo dài chuỗi câu hỏi"], ["flexible", "Linh hoạt", "Agent tự chọn theo tình huống"]] },
-  { key: "challengeLevel", title: "Mức thử thách", options: [["gentle", "Nhẹ nhàng", "Kiến thức nền, ví dụ đơn giản"], ["balanced", "Cân bằng", "Giải thích, hỏi, vận dụng"], ["deep", "Chuyên sâu", "Hỏi tại sao, đổi điều kiện"]] },
-];
+const DEFAULT: Settings = { aiStyle: "friendly", supportPreference: "socratic_first", challengeLevel: "balanced", selfAssessment: true };
+export interface NotifyPrefs { gaps: boolean; unfinished: boolean; weekly: boolean }
+export const NOTIFY_DEFAULT: NotifyPrefs = { gaps: true, unfinished: true, weekly: true };
 
-export default function SettingsPage() {
+export default function SettingsPage({ user }: { user: UserInfo }) {
   const [s, setS] = useState<Settings | null>(null);
-  const [cfg, setCfg] = useState<AppConfig | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<Theme>(pref<Theme>("theme", "light"));
+  const [notify, setNotify] = useState<NotifyPrefs>({ ...NOTIFY_DEFAULT, ...pref<Partial<NotifyPrefs>>("notify", {}) });
+  const [del, setDel] = useState<null | "sessions" | "all">(null);
   const [confirmText, setConfirmText] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
-  useEffect(() => { api.settings().then(setS).catch((e) => setMsg(explain(e))); api.config().then(setCfg).catch(() => {}); }, []);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { api.settings().then(setS).catch((e) => { setError(explain(e)); setS(DEFAULT); }); }, []);
+  useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(null), 2200); return () => clearTimeout(t); }, [saved]);
 
   async function patch(p: Partial<Settings>) {
-    setS((x) => (x ? { ...x, ...p } : x));
-    await api.saveSettings(p);
-    setSaved(true); setTimeout(() => setSaved(false), 1500);
+    if (!s) return;
+    const prev = s;
+    setS({ ...s, ...p }); setError(null);
+    try { setS(await api.saveSettings(p)); setSaved("Đã lưu thay đổi"); } catch (e) { setS(prev); setError(explain(e)); }
   }
-  if (!s) return <div className="mx-auto max-w-3xl px-4 py-10 text-muted">{msg ?? "Đang tải…"}</div>;
+  function patchNotify(p: Partial<NotifyPrefs>) {
+    const n = { ...notify, ...p };
+    setNotify(n); setPref("notify", n); setSaved("Đã lưu thay đổi");
+    window.dispatchEvent(new Event("mm-notify"));
+  }
+  async function doDelete() {
+    if (!del) return;
+    setBusy(true);
+    try {
+      await api.deleteData(del);
+      invalidate();
+      setDel(null); setConfirmText("");
+      setSaved(del === "all" ? "Đã xoá toàn bộ dữ liệu" : "Đã xoá lịch sử học tập");
+    } catch (e) { setError(explain(e)); } finally { setBusy(false); }
+  }
 
+  const v = s ?? DEFAULT;
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="font-serif text-3xl">Cài đặt</h1>
-      <p className="mt-1 text-sm text-muted h-5">{saved ? "Đã lưu." : "Thay đổi được lưu ngay. Chúng đổi cách MindMirror nói, không đổi tiêu chuẩn chính xác."}</p>
-      {GROUPS.map((g) => (
-        <fieldset key={g.key} className="mt-8">
-          <legend className="font-semibold">{g.title}</legend>
-          <div className="mt-2 grid sm:grid-cols-3 gap-2">
-            {g.options.map(([v, l, d]) => (
-              <label key={v} className={`cursor-pointer rounded-lg border px-3 py-2 ${s[g.key] === v ? "border-ink bg-sheet" : "border-line"}`}>
-                <input type="radio" name={g.key} className="sr-only" checked={s[g.key] === v} onChange={() => patch({ [g.key]: v } as Partial<Settings>)} />
-                <span className="font-medium text-sm">{l}</span>
-                <span className="block text-xs text-muted">{d}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      ))}
-      <label className="mt-8 flex items-center gap-3">
-        <input type="checkbox" checked={s.selfAssessment} onChange={(e) => patch({ selfAssessment: e.target.checked })} />
-        <span>Hỏi mức tự tin trước khi bắt đầu phiên Hiểu lại</span>
-      </label>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <PageHeader title="Cài đặt" subtitle="Tuỳ chỉnh cách MindMirror trò chuyện, hỗ trợ và nhắc bạn học." actions={
+        saved ? <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/10 px-3 py-1.5 text-sm font-medium text-moss"><Icon name="check" /> {saved}</span> : null
+      } />
+      {error && <p className="rounded-lg bg-rust/10 px-4 py-2.5 text-sm text-rust">{error}</p>}
 
-      <section className="mt-14 border-t border-line pt-6">
-        <h2 className="font-semibold">Dữ liệu của cậu</h2>
-        <p className="mt-1 text-sm text-muted">Gõ XOA để xác nhận. Không thể hoàn tác.</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} className="w-24 rounded-md border border-line bg-sheet px-2 py-1.5 text-sm" />
-          <button disabled={confirmText !== "XOA"} onClick={async () => { await api.deleteData("sessions"); setMsg("Đã xoá toàn bộ phiên học."); setConfirmText(""); }} className="rounded-md border border-rust text-rust px-3 py-1.5 text-sm disabled:opacity-30">Xoá các phiên học</button>
-          <button disabled={confirmText !== "XOA"} onClick={async () => { await api.deleteData("all"); setMsg("Đã xoá phiên, tài liệu, kết nối và cài đặt."); setConfirmText(""); }} className="rounded-md bg-rust text-paper px-3 py-1.5 text-sm disabled:opacity-30">Xoá tất cả dữ liệu</button>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[1fr_20rem]">
+        <div className="space-y-6">
+          <Card title="Trợ lý học tập" subtitle="Áp dụng cho các phiên mới và lượt trả lời tiếp theo">
+            <div className="divide-y divide-line">
+              <Row icon="chat" title="Phong cách trả lời" desc="Độ dài và giọng điệu của MindMirror.">
+                <SelectBox label="Phong cách trả lời" value={v.aiStyle} disabled={!s} onChange={(x) => patch({ aiStyle: x })} className="w-44"
+                  options={[{ value: "concise", label: "Ngắn gọn" }, { value: "friendly", label: "Vừa phải" }, { value: "academic", label: "Học thuật" }]} />
+              </Row>
+              <Row icon="chart" title="Mức độ thử thách" desc="Câu hỏi phản biện nhẹ nhàng hay đào sâu.">
+                <SelectBox label="Mức độ thử thách" value={v.challengeLevel} disabled={!s} onChange={(x) => patch({ challengeLevel: x })} className="w-44"
+                  options={[{ value: "gentle", label: "Nhẹ nhàng" }, { value: "balanced", label: "Cân bằng" }, { value: "deep", label: "Đào sâu" }]} />
+              </Row>
+              <Row icon="bulb" title="Ưu tiên tự suy nghĩ" desc="Bật: hỏi gợi mở trước khi giải thích. Tắt: linh hoạt đưa giải thích khi bạn cần.">
+                <Toggle label="Ưu tiên tự suy nghĩ" disabled={!s} checked={v.supportPreference === "socratic_first"} onChange={(on) => patch({ supportPreference: on ? "socratic_first" : "flexible" })} />
+              </Row>
+              <Row icon="user" title="Tự đánh giá trước phiên" desc="Hỏi bạn thấy mình đang ở mức nào trước khi Kiểm tra kiến thức.">
+                <Toggle label="Tự đánh giá trước phiên" disabled={!s} checked={v.selfAssessment} onChange={(on) => patch({ selfAssessment: on })} />
+              </Row>
+              <Row icon="book" title="Ngôn ngữ" desc="Ngôn ngữ giao diện và trò chuyện.">
+                <SelectBox label="Ngôn ngữ" value="vi" disabled onChange={() => {}} className="w-44" options={[{ value: "vi", label: "Tiếng Việt" }]} />
+              </Row>
+            </div>
+          </Card>
+
+          <Card title="Thông báo" subtitle="Hiển thị ở biểu tượng chuông trên thanh công cụ">
+            <div className="divide-y divide-line">
+              <Row icon="bulb" title="Kiến thức cần củng cố" desc="Nhắc khi một phiên còn khái niệm chưa rõ.">
+                <Toggle label="Kiến thức cần củng cố" checked={notify.gaps} onChange={(x) => patchNotify({ gaps: x })} />
+              </Row>
+              <Row icon="clock" title="Phiên học dang dở" desc="Nhắc quay lại phiên chưa kết thúc sau 1 ngày.">
+                <Toggle label="Phiên học dang dở" checked={notify.unfinished} onChange={(x) => patchNotify({ unfinished: x })} />
+              </Row>
+              <Row icon="chart" title="Báo cáo hằng tuần" desc="Tóm tắt số phiên học trong 7 ngày qua.">
+                <Toggle label="Báo cáo hằng tuần" checked={notify.weekly} onChange={(x) => patchNotify({ weekly: x })} />
+              </Row>
+            </div>
+          </Card>
+
+          <Card title="Giao diện">
+            <Row icon="panel" title="Chủ đề màu" desc="Sáng, tối hoặc theo hệ thống." first>
+              <SelectBox label="Chủ đề màu" value={theme} onChange={(t) => { setTheme(t); saveTheme(t); }} className="w-44"
+                options={[{ value: "light", label: "Sáng" }, { value: "dark", label: "Tối" }, { value: "system", label: "Theo hệ thống" }]} />
+            </Row>
+          </Card>
+
+          <Card title="Dữ liệu & quyền riêng tư">
+            <div className="divide-y divide-line">
+              <Row icon="clock" title="Lịch sử học tập" desc="Xem lại toàn bộ phiên đã học.">
+                <Link to="/history" className="inline-flex items-center gap-1 text-sm font-medium text-mirror">Mở lịch sử <Icon name="arrowRight" /></Link>
+              </Row>
+              <Row icon="trash" title="Xoá lịch sử học tập" desc="Xoá mọi phiên học, giữ lại tài liệu và thư mục.">
+                <Btn variant="danger" onClick={() => setDel("sessions")}>Xoá lịch sử</Btn>
+              </Row>
+              <Row icon="lock" title="Xoá toàn bộ dữ liệu" desc="Xoá phiên học, tài liệu, thư mục, kết nối và cài đặt.">
+                <Btn variant="danger" onClick={() => setDel("all")}>Xoá tất cả</Btn>
+              </Row>
+              <Row icon="external" title="Chính sách quyền riêng tư" desc="Cách MindMirror dùng dữ liệu của bạn.">
+                <a href="/privacy.html" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-mirror">Xem <Icon name="external" /></a>
+              </Row>
+            </div>
+          </Card>
         </div>
-        {msg && <p className="mt-2 text-sm">{msg}</p>}
-      </section>
 
-      {cfg && (
-        <section className="mt-10 text-xs text-muted">
-          Máy chủ: {cfg.env}, model {cfg.model}{cfg.embeddings ? ", tìm kiếm ngữ nghĩa bật" : ", tìm kiếm từ khoá"}{cfg.tracing.length ? `, theo dõi qua ${cfg.tracing.join(" + ")}` : ""}. Giới hạn: {cfg.limits.sessionsPerDay} phiên/ngày, {cfg.limits.turnsPerSession} lượt/phiên.
-        </section>
-      )}
+        <aside className="space-y-6">
+          <section className="panel p-5 text-center">
+            <div className="flex justify-center"><Avatar name={user.name} src={user.avatar} size={72} /></div>
+            <p className="mt-3 font-semibold text-ink">{user.name}</p>
+            {user.email && <p className="text-sm text-muted">{user.email}</p>}
+            <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-mist px-3 py-1 text-xs font-medium text-mirror"><Icon name="lock" className="h-3.5 w-3.5" /> Đăng nhập bằng Google</p>
+            <Btn className="mt-5 w-full" onClick={() => signOut()}><Icon name="logout" /> Đăng xuất</Btn>
+          </section>
+          <section className="panel bg-mist/40 p-5">
+            <p className="font-semibold text-ink">Cần hỗ trợ?</p>
+            <p className="mt-1 text-sm text-muted">Xem hướng dẫn sử dụng và câu hỏi thường gặp.</p>
+            <Link to="/help" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-mirror">Trợ giúp & phản hồi <Icon name="arrowRight" /></Link>
+          </section>
+        </aside>
+      </div>
+
+      <Modal open={!!del} title={del === "all" ? "Xoá toàn bộ dữ liệu" : "Xoá lịch sử học tập"} onClose={() => { setDel(null); setConfirmText(""); }}
+        footer={<><Btn onClick={() => { setDel(null); setConfirmText(""); }}>Huỷ</Btn><Btn variant="danger" disabled={confirmText.trim().toUpperCase() !== "XOA" || busy} onClick={doDelete}>{busy ? "Đang xoá…" : "Xoá vĩnh viễn"}</Btn></>}>
+        <p className="text-sm text-ink">{del === "all" ? "Toàn bộ phiên học, tài liệu, thư mục, kết nối và cài đặt sẽ bị xoá." : "Mọi phiên học và thẻ tổng kết sẽ bị xoá. Tài liệu và thư mục được giữ lại."} Thao tác này không hoàn tác được.</p>
+        <label className="mt-4 block text-sm font-medium text-ink">Gõ <b>XOA</b> để xác nhận
+          <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} className="mt-1.5 w-full rounded-lg border border-line bg-sheet px-3 py-2 font-normal outline-none focus:border-rust" />
+        </label>
+      </Modal>
+    </div>
+  );
+}
+
+function Row({ icon, title, desc, children, first }: { icon: IconName; title: string; desc: string; children: ReactNode; first?: boolean }) {
+  return (
+    <div className={`flex flex-col gap-3 py-4 sm:flex-row sm:items-center ${first ? "pt-0" : ""} first:pt-0 last:pb-0`}>
+      <span className="hidden h-9 w-9 shrink-0 place-items-center rounded-lg bg-mist text-mirror sm:grid"><Icon name={icon} /></span>
+      <div className="min-w-0 flex-1"><p className="text-sm font-medium text-ink">{title}</p><p className="text-xs text-muted">{desc}</p></div>
+      <div className="shrink-0">{children}</div>
     </div>
   );
 }

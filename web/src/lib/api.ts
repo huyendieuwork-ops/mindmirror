@@ -32,7 +32,8 @@ export interface TurnResult {
   newEvidence: Evidence[]; suggestModeSwitch: Mode | null; quickReplies: Intent[]; isFinished: boolean;
   card?: MirrorCard; citations: Citation[]; traceId: string | null; modelInfo: { provider: string; model: string } | null;
 }
-export interface LibraryDoc { id: string; title: string; kind: string; pageCount: number; chunkCount: number; embedded: boolean; warnings: string[]; createdAt: string; origin: unknown }
+export interface LibraryDoc { id: string; title: string; kind: string; pageCount: number; chunkCount: number; embedded: boolean; warnings: string[]; createdAt: string; origin: unknown; folderId?: string | null }
+export interface Folder { id: string; name: string; color: string; createdAt: string }
 export interface Connector { id: string; name: string; preset: string; host: string; hasToken: boolean; tools: { search: string; fetch: string } }
 export interface Settings { aiStyle: "friendly" | "concise" | "academic"; supportPreference: "socratic_first" | "direct" | "flexible"; challengeLevel: "gentle" | "balanced" | "deep"; selfAssessment: boolean }
 export interface AppConfig { env: string; devAuth: boolean; model: string; embeddings: boolean; tracing: string[]; limits: { sessionsPerDay: number; turnsPerSession: number; inputChars: number } }
@@ -47,7 +48,7 @@ export function explain(e: unknown): string {
   if (!(e instanceof ApiError)) return "Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.";
   const m: Record<string, string> = {
     unauthorized: "Phiên đăng nhập đã hết hạn. Đăng nhập lại để tiếp tục.",
-    session_quota_reached: `Đã dùng hết ${e.body?.limit ?? ""} phiên của hôm nay. Mai cậu quay lại nhé.`,
+    session_quota_reached: `Đã dùng hết ${e.body?.limit ?? ""} phiên của hôm nay. Mai bạn quay lại nhé.`,
     input_too_long: `Tin nhắn dài quá ${e.body?.max ?? 3000} ký tự. Rút gọn hoặc tách làm hai.`,
     agent_unavailable: "MindMirror tạm thời chưa phản hồi được. Tin nhắn vẫn còn — bấm Gửi lại sau vài giây.",
     session_finished: "Phiên này đã kết thúc. Mở phiên mới để học tiếp.",
@@ -59,6 +60,8 @@ export function explain(e: unknown): string {
     mcp_unreachable: "Không kết nối được MCP server. Kiểm tra địa chỉ và token.",
     no_search_tool: "MCP server này không có công cụ tìm kiếm tài liệu.",
     connector_encryption_not_configured: "Máy chủ chưa đặt khoá mã hoá token (CONNECTOR_ENC_KEY).",
+    folder_limit: "Đã đạt tối đa 50 thư mục.",
+    folder_not_found: "Thư mục không còn tồn tại. Tải lại trang rồi thử lại.",
   };
   return m[e.code] ?? `Lỗi ${e.status}: ${e.code}`;
 }
@@ -92,6 +95,11 @@ export const api = {
   documents: () => req<{ items: LibraryDoc[] }>("GET", "/api/documents"),
   uploadDocument: (b: { title: string; kind: string; pages: { page: number | null; text: string }[] }) => req<{ document: LibraryDoc; duplicate: boolean }>("POST", "/api/documents", b),
   deleteDocument: (id: string) => req("DELETE", `/api/documents/${id}`),
+  moveDocument: (id: string, folderId: string | null) => req<{ id: string; folderId: string | null }>("PATCH", `/api/documents/${id}`, { folder_id: folderId }),
+  folders: () => req<{ items: Folder[] }>("GET", "/api/folders"),
+  createFolder: (b: { name: string; color?: string }) => req<Folder>("POST", "/api/folders", b),
+  updateFolder: (id: string, b: { name?: string; color?: string }) => req<Folder>("PATCH", `/api/folders/${id}`, b),
+  deleteFolder: (id: string) => req("DELETE", `/api/folders/${id}`),
   connectors: () => req<{ items: Connector[] }>("GET", "/api/connectors"),
   addConnector: (b: { name: string; url: string; preset: string; token?: string }) => req<Connector>("POST", "/api/connectors", b),
   deleteConnector: (id: string) => req("DELETE", `/api/connectors/${id}`),

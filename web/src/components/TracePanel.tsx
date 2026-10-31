@@ -15,11 +15,11 @@ export default function TracePanel({ sessionId, version }: { sessionId: string; 
   const total = items.reduce((a, t) => ({ tok: a.tok + t.summary.inputTokens + t.summary.outputTokens, cost: a.cost + t.summary.costUsd }), { tok: 0, cost: 0 });
   return (
     <div className="text-sm">
-      <p className="text-muted">{items.length} lần xử lý, {total.tok.toLocaleString("vi")} token, ước tính ${total.cost.toFixed(4)}</p>
+      <p className="text-muted">{items.length} lần xử lý · {total.tok.toLocaleString("vi")} token · ước tính ${total.cost.toFixed(4)}</p>
       <ol className="mt-3 space-y-3">
         {items.slice().reverse().map((t) => (
-          <li key={t.traceId} className="border-l-2 border-line pl-3">
-            <p className="font-medium">
+          <li key={t.traceId} className="border-l-2 border-mirror/30 pl-3">
+            <p className="font-medium text-ink">
               {new Date(t.createdAt).toLocaleTimeString("vi")} — {t.summary.totalMs ?? "?"} ms
               {t.summary.fallbacks > 0 && <span className="text-rust">, đã chuyển model dự phòng</span>}
             </p>
