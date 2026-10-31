@@ -24,7 +24,8 @@ APP_ENV = "development"
 CF_ACCOUNT_ID = ""            # điền Account ID Cloudflare
 CF_GATEWAY_ID = "mindmirror-mvp"
 GEMINI_API_VERSION = "v1beta"
-MODEL_CORE = "gemini-3.8-flash"
+# Gói miễn phí: 3.8 Flash chỉ 20 lượt/ngày, 3.5 Flash Lite 500 lượt/ngày. Bật billing thì có thể đổi lại "gemini-3.8-flash".
+MODEL_CORE = "gemini-3.5-flash-lite"
 MODEL_LIGHT = "gemini-3.5-flash-lite"
 MODEL_FALLBACK = "openai/gpt-oss-120b"
 SUPABASE_URL = ""             # https://<project>.supabase.co
