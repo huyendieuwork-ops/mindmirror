@@ -1,7 +1,7 @@
 /** Token màu lấy từ CSS variables để có light/dark. */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
-  darkMode: "media",
+  darkMode: ["selector", "[data-theme=dark]"],
   theme: {
     extend: {
       colors: {
