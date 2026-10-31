@@ -37,7 +37,17 @@ export interface Folder { id: string; name: string; color: string; createdAt: st
 export interface Connector { id: string; name: string; preset: string; host: string; hasToken: boolean; tools: { search: string; fetch: string } }
 export interface Settings { aiStyle: "friendly" | "concise" | "academic"; supportPreference: "socratic_first" | "direct" | "flexible"; challengeLevel: "gentle" | "balanced" | "deep"; selfAssessment: boolean }
 export interface AppConfig { env: string; devAuth: boolean; model: string; embeddings: boolean; tracing: string[]; limits: { sessionsPerDay: number; turnsPerSession: number; inputChars: number } }
-export interface TraceRecord { traceId: string; name: string; createdAt: string; summary: { totalMs: number | null; llmCalls: number; llmErrors: number; fallbacks: number; inputTokens: number; outputTokens: number; costUsd: number; errors: { span: string; error?: string }[]; steps: { name: string; kind: string; ms: number; status: string }[] } }
+export interface TraceRecord {
+  traceId: string; name: string; createdAt: string;
+  summary: {
+    totalMs: number | null; llmCalls: number; llmErrors: number; fallbacks: number; inputTokens: number; outputTokens: number; costUsd: number;
+    errors: { span: string; error?: string }[]; steps: { name: string; kind: string; ms: number; status: string }[];
+    workflow?: { step: string; ms: number; status: string }[];
+    tools?: { name: string; initiator: string | null; ok: boolean; ms: number; error: string | null }[];
+    guardrails?: string[]; retrieval?: { purpose: string | null; method: string | null; hits: number; ms: number }[];
+    retries?: number; models?: string[];
+  };
+}
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, readonly body: any) { super(code); }

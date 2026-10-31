@@ -10,7 +10,7 @@ describe("mở phiên", () => {
   it("Hiểu lại: mời tự giải thích, không gọi model", () => {
     const s = newRe();
     expect(s.messages).toHaveLength(1);
-    expect(s.messages[0]!.text).toMatch(/giải thích theo cách cậu/);
+    expect(s.messages[0]!.text).toMatch(/giải thích theo cách bạn/);
     expect(s.state.phase).toBe("entry");
   });
   it("Khám phá: làm rõ điều tò mò", () => {

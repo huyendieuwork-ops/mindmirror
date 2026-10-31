@@ -54,7 +54,7 @@ export function decide(session: Session, intent: UserIntent | null, limits: Limi
     return {
       kind: "deterministic",
       action: "skip",
-      text: "Ok, mình bỏ qua câu này nhé — không sao cả. Cậu muốn đi tiếp phần khác, đổi chủ đề hay tổng kết luôn?",
+      text: "Ok, mình bỏ qua câu này nhé — không sao cả. Bạn muốn đi tiếp phần khác, đổi chủ đề hay tổng kết luôn?",
       quickReplies: ["try", "change_topic", "finish"],
     };
   }
@@ -66,8 +66,8 @@ export function decide(session: Session, intent: UserIntent | null, limits: Limi
       action: "switch_mode",
       text:
         to === "Hiểu lại"
-          ? "Mình chuyển sang chế độ Hiểu lại nhé. Cậu thử giải thích điểm này theo cách cậu đang hiểu xem?"
-          : "Mình chuyển sang chế độ Khám phá nhé. Cậu đang tò mò điều gì nhất quanh chủ đề này?",
+          ? "Mình chuyển sang chế độ Hiểu lại nhé. Bạn thử giải thích điểm này theo cách bạn đang hiểu xem?"
+          : "Mình chuyển sang chế độ Khám phá nhé. Bạn đang tò mò điều gì nhất quanh chủ đề này?",
       quickReplies: ["give_example", "finish"],
     };
   }
@@ -77,7 +77,7 @@ export function decide(session: Session, intent: UserIntent | null, limits: Limi
     return {
       kind: "deterministic",
       action: "limit_reached",
-      text: "Phiên này đã đạt số lượt tối đa của bản demo. Mình đã lưu lại mọi thứ — cậu có thể tạo thẻ Gương Hiểu Biết hoặc tạm dừng để tiếp tục sau.",
+      text: "Phiên này đã đạt số lượt tối đa của bản demo. Mình đã lưu lại mọi thứ — bạn có thể tạo thẻ Gương Hiểu Biết hoặc tạm dừng để tiếp tục sau.",
       quickReplies: ["finish"],
     };
   }

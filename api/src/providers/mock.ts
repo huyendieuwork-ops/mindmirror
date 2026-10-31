@@ -2,13 +2,19 @@ import { type LLMProvider, type LLMRequest, type LLMResponse, ProviderError } fr
 
 export type ScriptItem = object | string | ProviderError | ((req: LLMRequest) => object | string);
 
-/** Provider trả lời theo kịch bản — dùng cho unit test. Mỗi phần tử: object JSON, chuỗi thô, lỗi, hoặc hàm đọc prompt. */
+/**
+ * Provider trả lời theo kịch bản — dùng cho unit test/eval offline. Mỗi phần tử: object JSON, chuỗi thô, lỗi, hoặc hàm đọc prompt.
+ * Phần tử dạng { tool_calls: [{ name, args }] } mô phỏng model yêu cầu gọi công cụ (function calling).
+ */
 export class ScriptedProvider implements LLMProvider {
   readonly calls: LLMRequest[] = [];
+  readonly supportsTools = true;
   constructor(
     private script: ScriptItem[],
     readonly provider = "scripted",
     readonly model = "scripted-1",
+    /** true: ước lượng token theo độ dài prompt (≈4 ký tự/token) để eval offline đo được lượng context. */
+    readonly estimateTokens = false,
   ) {}
   async generateJSON(req: LLMRequest): Promise<LLMResponse> {
     this.calls.push(req);
@@ -16,8 +22,14 @@ export class ScriptedProvider implements LLMProvider {
     if (next === undefined) throw new Error("ScriptedProvider: hết kịch bản");
     if (next instanceof ProviderError) throw next;
     if (typeof next === "function") next = next(req);
+    const promptChars = req.system.length + req.user.length + JSON.stringify(req.toolExchanges ?? []).length;
+    const usage = { inputTokens: this.estimateTokens ? Math.ceil(promptChars / 4) : 10, outputTokens: 10 };
+    if (typeof next === "object" && next && Array.isArray((next as any).tool_calls)) {
+      const toolCalls = (next as any).tool_calls.map((c: any) => ({ name: String(c.name), args: c.args ?? {} }));
+      return { text: "", toolCalls, rawModelParts: toolCalls.map((c: any) => ({ functionCall: c })), provider: this.provider, model: this.model, latencyMs: 1, usage };
+    }
     const text = typeof next === "string" ? next : JSON.stringify(next);
-    return { text, provider: this.provider, model: this.model, latencyMs: 1, usage: { inputTokens: 10, outputTokens: 10 } };
+    return { text, provider: this.provider, model: this.model, latencyMs: 1, usage };
   }
 }
 

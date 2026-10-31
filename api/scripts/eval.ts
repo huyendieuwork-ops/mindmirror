@@ -29,6 +29,14 @@ const flag = (n: string) => args.includes(`--${n}`);
 const opt = (n: string, d: string) => { const i = args.indexOf(`--${n}`); return i >= 0 && args[i + 1] ? args[i + 1]! : d; };
 const SUITE = opt("suite", "all");
 const RUNS = Number(opt("runs", "3"));
+const PACE_MS = Number(opt("pace-ms", "4200")); // free tier 15 RPM: giãn cách lời gọi để không tự gây 429
+let lastCall = 0;
+async function pace() {
+  if (offline) return;
+  const w = lastCall + PACE_MS - Date.now();
+  if (w > 0) await new Promise((r) => setTimeout(r, w));
+  lastCall = Date.now();
+}
 const GATES = { overClaimMax: 0.1, citationValidityMin: 0.9, consistencyMin: 0.8, retrievalHitAtKMin: 0.85, behaviorPassMin: 0.85, kappaMin: 0.6 };
 
 const env: Env = { APP_ENV: "development" };
@@ -109,14 +117,14 @@ async function judgmentSuite() {
       const trace = new Trace("eval.judgment", { userId: U, sessionId: s.id, tags: ["eval", c.id], contentMode: contentMode(env) });
       traces.push(trace);
       try {
+        await pace();
         const deps: EngineDeps = { core, light, retriever, trace };
         const out = await runTurn(s, { text: c.answer }, deps);
         s = out.session;
         firstText ||= out.result.assistantText;
         runs.push(labelOf(s));
       } catch {
-        errors++;
-        runs.push("unclear"); // không chạy được = không có phán đoán
+        errors++; // lỗi hạ tầng (429/timeout) KHÔNG được tính là phán đoán "unclear" — loại khỏi chỉ số, báo riêng
       }
       trace.finish();
       const sum = trace.summary();
@@ -131,15 +139,16 @@ async function judgmentSuite() {
       faith.citesProposed += Number(v.citations_proposed ?? 0);
       faith.citesValid += Number(v.citations_valid ?? 0);
     }
-    perCase.push({ id: c.id, gold: c.gold, runs, final: majority(runs), firstText });
+    if (runs.length) perCase.push({ id: c.id, gold: c.gold, runs, final: majority(runs), firstText });
   }
 
   const gold = perCase.map((p) => p.gold);
   const pred = perCase.map((p) => p.final);
-  const cons = consistency(perCase.map((p) => p.runs));
+  const cons = consistency(perCase.filter((p) => p.runs.length >= 2).map((p) => p.runs));
   const alt = cases.filter((c) => c.gold_alt);
   const res = {
     cases: cases.length,
+    casesScored: perCase.length,
     accuracy: accuracy(gold, pred),
     macroF1: macroF1(gold, pred),
     kappaVsHuman: cohenKappa(gold, pred),
@@ -203,6 +212,7 @@ async function behaviorSuite() {
     const actions: string[] = []; let card; const fails: string[] = []; let firstText = "";
     try {
       for (const t of c.turns) {
+        await pace();
         const trace = new Trace("eval.behavior", { tags: ["eval", c.id], contentMode: contentMode(env) });
         traces.push(trace);
         const r = await runTurn(s, { text: t }, { core, light, retriever, trace });

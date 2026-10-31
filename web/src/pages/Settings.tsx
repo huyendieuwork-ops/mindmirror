@@ -17,6 +17,7 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(pref<Theme>("theme", "light"));
   const [notify, setNotify] = useState<NotifyPrefs>({ ...NOTIFY_DEFAULT, ...pref<Partial<NotifyPrefs>>("notify", {}) });
+  const [devMode, setDevMode] = useState<boolean>(pref<boolean>("devMode", false));
   const [del, setDel] = useState<null | "sessions" | "all">(null);
   const [confirmText, setConfirmText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -93,10 +94,15 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
           </Card>
 
           <Card title="Giao diện">
-            <Row icon="panel" title="Chủ đề màu" desc="Sáng, tối hoặc theo hệ thống." first>
-              <SelectBox label="Chủ đề màu" value={theme} onChange={(t) => { setTheme(t); saveTheme(t); }} className="w-44"
-                options={[{ value: "light", label: "Sáng" }, { value: "dark", label: "Tối" }, { value: "system", label: "Theo hệ thống" }]} />
-            </Row>
+            <div className="divide-y divide-line">
+              <Row icon="panel" title="Chủ đề màu" desc="Sáng, tối hoặc theo hệ thống.">
+                <SelectBox label="Chủ đề màu" value={theme} onChange={(t) => { setTheme(t); saveTheme(t); }} className="w-44"
+                  options={[{ value: "light", label: "Sáng" }, { value: "dark", label: "Tối" }, { value: "system", label: "Theo hệ thống" }]} />
+              </Row>
+              <Row icon="database" title="Chế độ kỹ thuật (demo)" desc="Hiện tab “Agent đã làm gì” trong phiên học: các bước workflow, công cụ, guardrail, token và chi phí ước tính.">
+                <Toggle label="Chế độ kỹ thuật" checked={devMode} onChange={(x) => { setDevMode(x); setPref("devMode", x); setSaved("Đã lưu thay đổi"); }} />
+              </Row>
+            </div>
           </Card>
 
           <Card title="Dữ liệu & quyền riêng tư">

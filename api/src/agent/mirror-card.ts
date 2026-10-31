@@ -74,7 +74,7 @@ export function rulesCard(s: Session): MirrorCard {
   const resolvedAfter = s.gaps.filter((g) => g.status === "resolved_after_support");
   const withSupport = assessment.criteria.filter((c) => c.status === "demonstrated_with_support");
   const changed = resolvedAfter.length || withSupport.length
-    ? `Sau khi được hỗ trợ, cậu đã diễn đạt lại được: ${[...new Set([...resolvedAfter.map((g) => g.concept), ...withSupport.map((c) => c.concept)])].join("; ")}.`
+    ? `Sau khi được hỗ trợ, bạn đã diễn đạt lại được: ${[...new Set([...resolvedAfter.map((g) => g.concept), ...withSupport.map((c) => c.concept)])].join("; ")}.`
     : null;
 
   const unresolved = [...new Set([
@@ -84,7 +84,7 @@ export function rulesCard(s: Session): MirrorCard {
   const insufficient = observed.length === 0;
 
   let nextStep: string;
-  if (insufficient) nextStep = "Phiên này mình chưa đủ căn cứ để ghi nhận điều cậu đã thể hiện. Lần sau thử tự giải thích một ví dụ nhé.";
+  if (insufficient) nextStep = "Phiên này mình chưa đủ căn cứ để ghi nhận điều bạn đã thể hiện. Lần sau thử tự giải thích một ví dụ nhé.";
   else if (unresolved.length) nextStep = `Thử thêm một tình huống nhỏ về: ${unresolved[0]}.`;
   else if (withSupport.length || resolvedAfter.length) nextStep = "Hãy thử lại một câu tương tự sau vài ngày, không xem gợi ý, để kiểm tra độc lập.";
   else nextStep = "Thử áp dụng vào một bài tập mới có điều kiện khác để kiểm tra khả năng vận dụng.";

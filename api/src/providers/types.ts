@@ -6,6 +6,32 @@ export interface LLMRequest {
   temperature?: number;
   /** Nhãn mục đích để trace/eval: turn | plan | card | summary | judge */
   purpose?: string;
+  /** Tool calling (native): khai báo công cụ model ĐƯỢC PHÉP gọi ở lượt này. */
+  tools?: ToolDeclaration[];
+  /** Vòng trao đổi tool trước đó (model đã gọi → backend đã chạy) để model viết câu trả lời cuối. */
+  toolExchanges?: ToolExchange[];
+  /** AUTO: model tự quyết; NONE: cấm gọi thêm (vòng cuối, buộc trả lời). */
+  toolMode?: "AUTO" | "NONE";
+}
+
+/** Khai báo công cụ theo JSON Schema (tập con OpenAPI mà Gemini/OpenAI đều hiểu). */
+export interface ToolDeclaration {
+  name: string;
+  description: string;
+  parameters: { type: "object"; properties: Record<string, unknown>; required?: string[] };
+}
+
+export interface ToolCall {
+  id?: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface ToolExchange {
+  calls: ToolCall[];
+  /** Phần trả lời thô của model (giữ nguyên thought signature của Gemini 3 khi gửi lại). */
+  rawModelParts?: unknown[];
+  results: { name: string; id?: string; response: unknown }[];
 }
 
 export interface LLMUsage {
@@ -19,11 +45,16 @@ export interface LLMResponse {
   provider: string;
   model: string;
   latencyMs: number;
+  /** Model yêu cầu gọi công cụ thay vì trả lời ngay (text có thể rỗng). */
+  toolCalls?: ToolCall[];
+  rawModelParts?: unknown[];
 }
 
 export interface LLMProvider {
   readonly provider: string;
   readonly model: string;
+  /** true nếu provider hiểu req.tools (function calling native). */
+  readonly supportsTools?: boolean;
   generateJSON(req: LLMRequest, signal?: AbortSignal): Promise<LLMResponse>;
 }
 

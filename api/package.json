@@ -10,7 +10,8 @@
     "test": "vitest run",
     "chat": "tsx scripts/chat-cli.ts",
     "eval": "tsx scripts/eval.ts",
-    "eval:retrieval": "tsx scripts/eval.ts --suite retrieval"
+    "eval:retrieval": "tsx scripts/eval.ts --suite retrieval",
+    "eval:agent": "tsx scripts/agent-eval.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

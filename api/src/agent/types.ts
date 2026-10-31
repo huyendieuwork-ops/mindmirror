@@ -148,6 +148,8 @@ export interface LearningState {
   selfConfidence: "unsure" | "somewhat" | "confident" | null;
   summary: string;               // short memory do hệ thống quản lý
   pendingModeSuggestion: SessionMode | null;
+  /** Guardrail: lượt trước agent lặp lại câu hỏi cũ → lượt này phải đổi góc hỏi. */
+  repeatedQuestion?: boolean;
 }
 
 export interface Message {
@@ -222,7 +224,7 @@ export interface LearnerAssessment {
 export interface TurnResult {
   turnId: string;
   phase: Phase;
-  action: Action | "pause" | "skip" | "switch_mode" | "limit_reached" | "finish";
+  action: Action | "pause" | "skip" | "switch_mode" | "limit_reached" | "finish" | "refuse";
   assistantText: string;
   hintLevel: number;
   gaps: Gap[];
@@ -234,4 +236,9 @@ export interface TurnResult {
   citations: Citation[];
   traceId: string | null;
   modelInfo: { provider: string; model: string } | null;
+  /** Công cụ đã chạy trong lượt (tên + ai khởi tạo + thành công?) — không chứa nội dung. */
+  toolsUsed?: { name: string; initiator: string; ok: boolean }[];
+  /** Guardrail đã kích hoạt trong lượt (mã ngắn). */
+  guardrails?: string[];
+  cardSaved?: boolean;
 }

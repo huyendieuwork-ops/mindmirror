@@ -17,7 +17,7 @@ export const ACTIONS = [
 // Output của 1 lượt Agent. Model trả JSON này; backend validate + kiểm chứng.
 export const TurnOutputSchema = z.object({
   next_action: z.enum(ACTIONS),
-  assistant_text: z.string().min(1).max(2500),
+  assistant_text: z.string().min(1).max(4500),
   observed_evidence: z
     .array(
       z.object({
@@ -41,7 +41,7 @@ export const TurnOutputSchema = z.object({
   // Trích dẫn cho các nhận xét kiến thức trong assistant_text (đánh dấu [S1] trong lời)
   source_citations: z.array(z.object({ source: z.string().max(6), quote: z.string().min(1).max(400) })).max(4).default([]),
   // Model tự báo – chỉ lưu tham khảo, KHÔNG dùng để chấm.
-  confidence: z.enum(["low", "medium", "high"]).default("low"),
+  confidence: z.enum(["low", "medium", "high"]).default("medium"),
 });
 export type TurnOutput = z.infer<typeof TurnOutputSchema>;
 
