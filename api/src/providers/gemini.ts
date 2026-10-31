@@ -11,7 +11,10 @@ export interface GeminiConfig {
 
 export class GeminiProvider implements LLMProvider {
   readonly provider = "google-ai-studio";
-  constructor(private cfg: GeminiConfig) {}
+  constructor(private cfg: GeminiConfig) {
+    // Bỏ ký tự vô hình dính khi copy-paste API key.
+    this.cfg = { ...cfg, apiKey: (cfg.apiKey ?? "").replace(/[^\x21-\x7E]/g, "") };
+  }
   get model() {
     return this.cfg.model;
   }
@@ -52,7 +55,10 @@ export class GeminiProvider implements LLMProvider {
     });
     if (!r.ok) {
       // Không đẩy body lỗi (có thể chứa prompt) ra ngoài.
-      throw new ProviderError(`Gemini HTTP ${r.status}`, r.status, this.provider, parseRetryAfter(r.headers.get("retry-after")));
+      // Chỉ lấy mã lý do của Google (vd API_KEY_INVALID), không lấy nội dung.
+      let reason = "";
+      try { const e: any = await r.clone().json(); reason = e?.error?.details?.find((d: any) => d?.reason)?.reason ?? e?.error?.status ?? ""; } catch {}
+      throw new ProviderError(`Gemini HTTP ${r.status}${reason ? " " + reason : ""}`, r.status, this.provider, parseRetryAfter(r.headers.get("retry-after")));
     }
     const obj: any = await r.json();
     const text: string =
