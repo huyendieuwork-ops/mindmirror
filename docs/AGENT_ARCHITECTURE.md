@@ -123,10 +123,18 @@ Báo cáo: `api/eval/reports/agent-eval-<thời gian>.md|json`. CI của mỗi P
 |---|---|---|---|
 | guardrail (input 12, tool/quyền 5, assessment 6) | 23 | 23 | 23 |
 | rag (citation 5, retrieval 5) | 10 | 10 | 10 |
-| workflow (kịch bản 8; tool selection live 2) | 10 | 8 | 8 |
-| socratic (live) | 8 | 0 | — chưa chạy trong môi trường phát triển (không có key) |
+| workflow (kịch bản 8) | 8 | 8 | 8 |
 
-Ghi chú trung thực: ca offline kiểm chứng **cơ chế** (guardrail, quyền, trích dẫn, điều kiện dừng, retry) bằng code thật với model mô phỏng — đạt 100% là kỳ vọng của test hồi quy, **không** phải thước đo chất lượng câu hỏi của Gemini. Chất lượng Socratic/tool selection chỉ đo được ở ca live (chạy trong CI của PR — xem mục 10).
+**Kết quả live thật — CI của PR #3 (31/10/2026 UTC, `gemini-3.5-flash-lite`, 11 lời gọi, `--max-calls 24`)** — chạy 2 lần (run #5, #6), kết quả giống nhau:
+
+| Nhóm | Số ca | Đạt | Ghi chú |
+|---|---|---|---|
+| socratic (phát hiện hiểu lầm, hỏi phản biện, không lộ đáp án, điều chỉnh theo câu trả lời mới, giải thích có cấu trúc, xin đáp án) | 8 | 8 | lộ đáp án (trùng trigram với đáp án mẫu) 0.00–0.22, ngưỡng < 0.6 |
+| tool selection | 2 | 1 | ✅ ts-02 không gọi công cụ thừa cho câu phổ thông · ❌ **ts-01**: người học hỏi "tài liệu của em" — công cụ được mở nhưng model chọn hỏi lại thay vì gọi `search_learning_materials` |
+
+**Judgment eval có sẵn** (14 ca × 3 lần, Gemini thật, có giãn cách 4.2s): trước nhánh này (CI #4) accuracy 64%, κ 0.45, nhất quán 57%, 11 lỗi 429 bị tính nhầm thành "unclear". Sau nhánh này (CI #6): **accuracy 86%, κ 0.78, over-claim 0%, chê sai người đúng 0%, bịa quote 0%, 0 lỗi** — nhưng **nhất quán 71% < ngưỡng 80%** (2 ca dao động observed/unclear giữa 3 lần chạy) nên job CI vẫn đỏ ở bước này, như mọi lần chạy trước trên repo.
+
+Ghi chú trung thực: ca offline kiểm chứng **cơ chế** (guardrail, quyền, trích dẫn, điều kiện dừng, retry) bằng code thật với model mô phỏng — đạt 100% là kỳ vọng của test hồi quy, **không** phải thước đo chất lượng câu hỏi của Gemini. Chất lượng Socratic/tool selection đo ở ca live phía trên.
 
 ## 8. Chi phí & tối ưu Gemini free tier
 
@@ -163,7 +171,8 @@ Hoặc mở **MCP Inspector** (`npx @modelcontextprotocol/inspector`), chọn St
 
 ## 11. Giới hạn đã biết
 
-- Ca Socratic/tool selection **live** chưa chạy trong môi trường phát triển (sandbox không có key và không truy cập được Google); chạy trong CI của PR hoặc trên máy có key.
+- Tool selection live: model chưa tự gọi `search_learning_materials` khi người học nhắc "tài liệu của em" (ts-01 trượt cả 2 lần chạy). Hướng sửa đề xuất: khi `DOC_REF` khớp và thư viện có tài liệu, để policy gọi công cụ một cách deterministic (giống `retrieve_document_context`) thay vì chờ model quyết định.
+- Judgment eval: độ nhất quán qua 3 lần chạy 71% (< 80%) — model dao động ở ca "đúng một phần"; cần thêm ca gán nhãn và/hoặc temperature thấp hơn cho bước chấm.
 - Phát hiện injection dựa trên mẫu (regex) — chặn được các dạng phổ biến EN/VI, không chống được mọi biến thể; lớp phòng thủ chính vẫn là: tài liệu chỉ là dữ kiện, quyền kiểm theo `userId`, mọi phán đoán phải có bằng chứng kiểm chứng bằng code.
 - "Lộ đáp án quá sớm" mới được **đo** (trùng lặp trigram với đáp án mẫu) và ghi guardrail, chưa tự viết lại câu trả lời (tránh tốn thêm lời gọi).
 - KaTeX/Mermaid tải từ CDN jsdelivr khi câu trả lời có công thức/sơ đồ; mất mạng thì hiện mã gốc.
