@@ -2,54 +2,86 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Tông xanh dương pastel, lấy từ logo MindMirror */
 :root {
-  --ink: 31 42 68;       /* #1F2A44 mực chàm */
-  --paper: 244 246 245;  /* #F4F6F5 giấy lạnh */
-  --sheet: 255 255 255;
-  --mirror: 95 127 160;  /* #5F7FA0 xanh gương */
-  --marker: 242 210 75;  /* #F2D24B bút dạ quang */
-  --moss: 62 125 99;     /* #3E7D63 */
-  --rust: 176 84 60;     /* #B0543C */
-  --muted: 96 106 128;
-  --line: 214 221 228;
+  --ink: 30 52 92;        /* #1E345C xanh than (chữ) */
+  --paper: 244 248 255;   /* #F4F8FF nền */
+  --sheet: 255 255 255;   /* thẻ */
+  --mirror: 74 134 219;   /* #4A86DB xanh chủ đạo */
+  --marker: 191 225 255;  /* #BFE1FF vết dạ quang xanh nhạt */
+  --moss: 46 150 118;     /* xanh lá dịu */
+  --rust: 214 96 96;      /* đỏ dịu */
+  --muted: 100 116 145;
+  --line: 218 230 246;
+  --mist: 230 241 255;    /* #E6F1FF nền nhấn */
+  --sky: 125 196 250;     /* #7DC4FA xanh trời */
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: 228 233 241;
-    --paper: 20 26 43;
-    --sheet: 28 36 58;
-    --mirror: 140 170 200;
-    --marker: 201 168 58;
-    --moss: 112 182 148;
-    --rust: 226 132 106;
-    --muted: 150 160 182;
-    --line: 52 63 92;
+    --ink: 226 236 252;
+    --paper: 14 22 40;
+    --sheet: 22 33 56;
+    --mirror: 125 175 240;
+    --marker: 56 96 156;
+    --moss: 110 200 160;
+    --rust: 240 140 140;
+    --muted: 150 165 195;
+    --line: 44 60 92;
+    --mist: 28 43 72;
+    --sky: 100 170 230;
     color-scheme: dark;
   }
 }
 
 html, body, #root { height: 100%; }
-body { padding-bottom: env(safe-area-inset-bottom, 0px); }
+body {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background:
+    radial-gradient(1200px 600px at 100% -10%, rgb(var(--sky) / 0.18), transparent 60%),
+    radial-gradient(900px 500px at -10% 10%, rgb(var(--mirror) / 0.10), transparent 60%),
+    rgb(var(--paper));
+  background-attachment: fixed;
+}
 
-/* Điểm nhấn duy nhất: trích dẫn như vết bút dạ quang trên giáo trình */
+/* Nút chính: dải màu xanh pastel → xanh đậm hơn, dùng cho mọi nút "bg-ink" cũ */
+button.bg-ink, a.bg-ink, .btn-primary {
+  background-color: rgb(var(--mirror));
+  background-image: linear-gradient(135deg, #5FA3F0 0%, #3F7AD4 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 6px 18px -8px rgb(63 122 212 / 0.6);
+  transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+}
+button.bg-ink:hover:not(:disabled), a.bg-ink:hover, .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 22px -10px rgb(63 122 212 / 0.7); opacity: 1; }
+button.bg-ink.text-paper, a.bg-ink.text-paper { color: #fff; }
+
+@layer components {
+  .card { @apply bg-sheet border border-line rounded-2xl shadow-[0_8px_30px_-18px_rgb(30_52_92/0.25)]; }
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-semibold disabled:opacity-40; }
+  .btn-soft { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 font-medium bg-mist text-mirror hover:bg-marker/60 transition-colors; }
+  .chip { @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm border border-line bg-sheet hover:border-mirror transition-colors; }
+  .wordmark-a { color: rgb(var(--ink)); }
+  .wordmark-b { color: rgb(var(--mirror)); }
+}
+
+/* Trích dẫn như vết bút dạ quang trên giáo trình */
 .hl {
-  background: linear-gradient(transparent 52%, rgb(var(--marker) / 0.75) 52%, rgb(var(--marker) / 0.75) 92%, transparent 92%);
+  background: linear-gradient(transparent 52%, rgb(var(--marker) / 0.85) 52%, rgb(var(--marker) / 0.85) 92%, transparent 92%);
   padding: 0 0.1em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-}
-@media (prefers-color-scheme: dark) {
-  .hl { background: linear-gradient(transparent 52%, rgb(var(--marker) / 0.45) 52%, rgb(var(--marker) / 0.45) 92%, transparent 92%); }
 }
 .cite-ref {
   font-size: 0.72em; vertical-align: super; font-weight: 600; color: rgb(var(--mirror));
   padding: 0 0.15em; cursor: pointer; border-radius: 3px;
 }
-.cite-ref:hover, .cite-ref:focus-visible { background: rgb(var(--marker) / 0.6); color: rgb(var(--ink)); outline: none; }
+.cite-ref:hover, .cite-ref:focus-visible { background: rgb(var(--marker)); color: rgb(var(--ink)); outline: none; }
 
 :focus-visible { outline: 2px solid rgb(var(--mirror)); outline-offset: 2px; }
 
 .reveal { animation: reveal 520ms cubic-bezier(.2,.7,.2,1) both; }
 @keyframes reveal { from { opacity: 0; transform: translateY(6px) scaleY(.98); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .reveal { animation: none; } }
+.float { animation: float 6s ease-in-out infinite; }
+@keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@media (prefers-reduced-motion: reduce) { .reveal, .float { animation: none; } }
