@@ -5,7 +5,7 @@ export const INTENT_LABEL: Record<Intent, string> = {
   show_answer: "Giải thích luôn",
   explain_more: "Giải thích rõ hơn",
   give_example: "Cho ví dụ",
-  try: "Tớ muốn thử",
+  try: "Mình muốn thử",
   skip: "Bỏ qua",
   change_topic: "Đổi chủ đề",
   switch_mode: "Đổi chế độ",
@@ -31,6 +31,6 @@ export const PHASE_LABEL: Record<string, string> = {
   transfer: "Thử tình huống mới", reflect: "Sẵn sàng tổng kết", finished: "Đã kết thúc",
 };
 
-export const MODE_LABEL = { explore: "Khám phá", reunderstand: "Hiểu lại" } as const;
+export const MODE_LABEL = { explore: "Khám phá kiến thức", reunderstand: "Kiểm tra kiến thức" } as const;
 
 export const HINT_LABEL = ["Chưa gợi ý", "Câu hỏi gợi mở", "Ví dụ đơn giản", "Kiến thức nền"];

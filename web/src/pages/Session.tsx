@@ -1,9 +1,12 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, explain, newTurnId, type Assessment, type Citation, type Intent, type MirrorCard, type Msg, type SessionView } from "../lib/api";
-import { HINT_LABEL, INTENT_LABEL, MODE_LABEL, PHASE_LABEL, STATUS_COLOR, STATUS_LABEL } from "../lib/labels";
+import { HINT_LABEL, INTENT_LABEL, PHASE_LABEL, STATUS_COLOR, STATUS_LABEL } from "../lib/labels";
+import { invalidate, MODE_PAGE, useLearningData } from "../lib/data";
 import MirrorCardView from "../components/MirrorCardView";
 import TracePanel from "../components/TracePanel";
+import { Logo } from "../components/Layout";
+import { Icon, PageHeader } from "../components/ui";
 
 const DEFAULT_REPLIES: Intent[] = ["hint", "give_example", "show_answer", "skip", "finish"];
 
@@ -18,10 +21,12 @@ export default function SessionPage() {
   const [modeHint, setModeHint] = useState<string | null>(null);
   const [card, setCard] = useState<MirrorCard | null>(null);
   const [assessment, setAssessment] = useState<Assessment | null>(null);
-  const [active, setActive] = useState<string | null>(null); // trích dẫn đang được chọn
+  const [active, setActive] = useState<string | null>(null);
   const [tab, setTab] = useState<"sources" | "trace">("sources");
+  const [panel, setPanel] = useState(false);
   const [version, setVersion] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
+  const { docs, folders } = useLearningData();
 
   async function load() {
     try {
@@ -43,175 +48,210 @@ export default function SessionPage() {
       const r = await api.turn(id, { text: t, intent, client_turn_id: turnId });
       setText(""); setPending(null);
       setReplies(r.quickReplies.length ? r.quickReplies : DEFAULT_REPLIES);
-      setModeHint(r.suggestModeSwitch ? MODE_LABEL[r.suggestModeSwitch] : null);
+      setModeHint(r.suggestModeSwitch ? MODE_PAGE[r.suggestModeSwitch].title : null);
       if (r.card) setCard(r.card);
       await load();
+      invalidate();
       setVersion((v) => v + 1);
     } catch (e) {
       setError(explain(e)); // giữ pending để bấm "Gửi lại" với cùng client_turn_id
     } finally { setSending(false); }
   }
 
-  // Mọi trích dẫn trong phiên — đánh số theo thứ tự xuất hiện trong từng tin nhắn
   const allCitations = useMemo(() => {
     const out: { key: string; c: Citation; msgId: string; n: number }[] = [];
     s?.messages.forEach((m) => m.citations?.forEach((c, i) => out.push({ key: `${m.id}:${i + 1}`, c, msgId: m.id, n: i + 1 })));
     return out.reverse();
   }, [s]);
 
-  if (!s) return <div className="mx-auto max-w-3xl px-4 py-16 text-muted">{error ?? "Đang mở phiên…"}</div>;
+  if (!s) return <div className="mx-auto max-w-6xl py-16 text-center text-muted">{error ?? "Đang mở phiên…"}</div>;
+  const page = MODE_PAGE[s.mode];
   const finished = s.status === "finished";
   const rubricStatus = new Map(assessment?.criteria.map((c) => [c.criterionId, c.status]) ?? []);
+  const attached = docs.filter((d) => s.documentIds.includes(d.id));
+  const folderNames = Array.from(new Set(attached.map((d) => folders.find((f) => f.id === d.folderId)?.name).filter(Boolean)));
+  const sourceLabel = s.documentIds.length === 0 ? "Không gắn học liệu" : folderNames.length === 1 ? folderNames[0] : `${s.documentIds.length} tài liệu`;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-10">
-      <div className="min-w-0 flex flex-col min-h-[calc(100vh-3.5rem)]">
-        <header className="pt-6 pb-4 border-b border-line">
-          <p className="text-sm text-muted">{MODE_LABEL[s.mode]} · {PHASE_LABEL[s.phase] ?? s.phase}</p>
-          <h1 className="mt-1 font-serif text-2xl sm:text-3xl leading-tight">{s.topic}</h1>
-          <HintLadder level={s.hintLevel} />
-        </header>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHeader title={page.title} subtitle={page.subtitle}
+        actions={<Link to={page.path} className="inline-flex items-center gap-2 rounded-lg border border-line bg-sheet px-3.5 py-2 text-sm font-medium text-mirror hover:border-mirror/60"><Icon name="plus" /> {s.mode === "reunderstand" ? "Cuộc trò chuyện mới" : "Chủ đề mới"}</Link>} />
 
-        <ol className="flex-1 py-6 space-y-6" aria-live="polite">
-          {s.messages.map((m) => (
-            <Message key={m.id} m={m} active={active} onCite={(k) => { setActive(k); setTab("sources"); }} />
-          ))}
-          {pending && (
-            <li className="flex justify-end">
-              <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-ink/[0.06] px-4 py-2.5 opacity-70">{pending.text || INTENT_LABEL[pending.intent!]}</p>
-            </li>
-          )}
-          {sending && <li className="font-serif text-muted italic">MindMirror đang nghĩ…</li>}
-        </ol>
+      <div className="flex gap-6">
+        <section className="panel flex min-w-0 flex-1 flex-col overflow-hidden" style={{ minHeight: "calc(100vh - 15rem)" }}>
+          <header className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h2 className="truncate font-semibold text-ink">{s.topic}</h2>
+              <HintLadder level={s.hintLevel} phase={PHASE_LABEL[s.phase] ?? s.phase} />
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-lg border border-mirror/25 bg-mist/60 px-3 py-1.5 text-sm font-medium text-mirror" title={attached.map((d) => d.title).join("\n")}>
+                <Icon name="folder" className="h-4 w-4" /> {sourceLabel}
+              </span>
+              <button onClick={() => setPanel((p) => !p)} aria-pressed={panel} className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium ${panel ? "border-mirror text-mirror" : "border-line text-ink hover:border-mirror/60"}`}>
+                <Icon name="panel" className="h-4 w-4" /> Chi tiết phiên
+              </button>
+            </div>
+          </header>
 
-        {card && <MirrorCardView card={card} />}
-        <div ref={endRef} />
+          <ol className="flex-1 space-y-7 overflow-y-auto px-5 py-6 sm:px-10" aria-live="polite">
+            {s.messages.map((m) => <Message key={m.id} m={m} active={active} onCite={(k) => { setActive(k); setTab("sources"); setPanel(true); }} />)}
+            {pending && (
+              <li className="flex justify-end"><p className="max-w-[80%] rounded-2xl bg-mist px-4 py-3 text-[0.95rem] text-ink opacity-70">{pending.text || INTENT_LABEL[pending.intent!]}</p></li>
+            )}
+            {sending && (
+              <li className="flex items-center gap-3 text-sm text-muted"><Logo size={28} /><span className="flex gap-1"><Dot /><Dot d={150} /><Dot d={300} /></span> MindMirror đang suy nghĩ…</li>
+            )}
+            {card && <li><MirrorCardView card={card} /></li>}
+            <div ref={endRef} />
+          </ol>
 
-        {!finished && (
-          <div className="sticky bottom-0 bg-paper pt-3 pb-4" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 1rem)" }}>
-            {error && (
-              <div className="mb-2 flex items-center gap-3 text-sm text-rust">
-                <span>{error}</span>
-                {pending && <button className="underline font-medium" onClick={() => send(pending.text, pending.intent, pending.turnId)}>Gửi lại</button>}
+          {!finished ? (
+            <div className="border-t border-line px-5 pb-4 pt-3 sm:px-10" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 1rem)" }}>
+              {error && (
+                <div className="mb-2 flex flex-wrap items-center gap-3 rounded-lg bg-rust/10 px-3 py-2 text-sm text-rust">
+                  <span>{error}</span>
+                  {pending && <button className="font-semibold underline" onClick={() => send(pending.text, pending.intent, pending.turnId)}>Gửi lại</button>}
+                </div>
+              )}
+              {modeHint && (
+                <p className="mb-2 text-sm text-ink">MindMirror gợi ý chuyển sang <b>{modeHint}</b> cho điểm này.{" "}
+                  <button className="font-medium text-mirror underline" onClick={() => send("", "switch_mode")}>Chuyển</button>{" "}
+                  <button className="text-muted underline" onClick={() => setModeHint(null)}>Không cần</button></p>
+              )}
+              <div className="mb-2 flex flex-wrap gap-2">
+                {replies.filter((r) => r !== "switch_mode").map((r) => (
+                  <button key={r} disabled={sending} onClick={() => send("", r)}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-40 ${r === "finish" ? "border-mirror/40 bg-mist text-mirror" : "border-line bg-sheet text-ink hover:border-mirror/60"}`}>
+                    {INTENT_LABEL[r]}
+                  </button>
+                ))}
               </div>
+              <form className="flex items-end gap-2 rounded-2xl border border-line bg-sheet p-2 focus-within:border-mirror" onSubmit={(e) => { e.preventDefault(); send(text, null); }}>
+                <textarea value={text} onChange={(e) => setText(e.target.value)} rows={1} maxLength={3000}
+                  placeholder={s.mode === "reunderstand" ? "Viết suy nghĩ hoặc trả lời câu hỏi của MindMirror…" : "Nhập câu hỏi hoặc chủ đề bạn muốn khám phá…"}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text, null); } }}
+                  className="max-h-40 min-h-[2.5rem] flex-1 resize-none bg-transparent px-3 py-2 text-[0.95rem] outline-none placeholder:text-muted/70" />
+                <button disabled={sending || !text.trim()} aria-label="Gửi" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-mirror text-white disabled:opacity-40"><Icon name="send" /></button>
+              </form>
+              <p className="mt-2 text-center text-[11px] text-muted">MindMirror có thể mắc lỗi. Hãy kiểm tra những thông tin quan trọng.</p>
+            </div>
+          ) : (
+            <p className="border-t border-line px-5 py-5 text-center text-sm text-muted">Phiên đã kết thúc. <Link to={page.path} className="font-medium text-mirror">Mở phiên mới</Link></p>
+          )}
+        </section>
+
+        {/* Bảng chi tiết: tiêu chí, trích dẫn, các bước Agent đã làm */}
+        {panel && (
+          <aside className="fixed inset-y-0 right-0 z-40 w-[22rem] max-w-[92vw] overflow-y-auto border-l border-line bg-sheet p-5 shadow-xl xl:static xl:z-auto xl:w-80 xl:shrink-0 xl:rounded-2xl xl:border xl:shadow-none" style={{ maxHeight: "calc(100vh - 9rem)" }}>
+            <div className="mb-4 flex items-center justify-between">
+              <p className="font-semibold text-ink">Chi tiết phiên</p>
+              <button onClick={() => setPanel(false)} className="rounded-md p-1 text-muted hover:bg-mist" aria-label="Đóng"><Icon name="x" /></button>
+            </div>
+            {s.rubric.length > 0 && (
+              <section className="mb-6">
+                <h3 className="text-sm font-semibold text-ink">Điều cần thể hiện</h3>
+                <ul className="mt-2 space-y-2">
+                  {s.rubric.map((c) => {
+                    const st = rubricStatus.get(c.id) ?? "insufficient_evidence";
+                    return (
+                      <li key={c.id} className="flex gap-2 text-sm">
+                        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[st]}`} title={STATUS_LABEL[st]} />
+                        <span><span className="font-medium text-ink">{c.concept}</span><span className="block text-xs text-muted">{STATUS_LABEL[st]}{c.citation.page ? ` · tr. ${c.citation.page}` : ""}</span></span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
             )}
-            {modeHint && (
-              <p className="mb-2 text-sm">
-                MindMirror gợi ý chuyển sang <b>{modeHint}</b> cho điểm này.{" "}
-                <button className="underline" onClick={() => send("", "switch_mode")}>Chuyển</button>{" "}
-                <button className="text-muted underline" onClick={() => setModeHint(null)}>Không cần</button>
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2 mb-2">
-              {replies.filter((r) => r !== "switch_mode").map((r) => (
-                <button key={r} disabled={sending} onClick={() => send("", r)}
-                  className={`px-3 py-1 rounded-full text-sm border disabled:opacity-40 ${r === "finish" ? "border-ink" : "border-line hover:border-ink"}`}>
-                  {INTENT_LABEL[r]}
+            <div className="flex gap-1 rounded-lg bg-paper p-1 text-sm" role="tablist">
+              {(["sources", "trace"] as const).map((t) => (
+                <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`flex-1 rounded-md px-3 py-1.5 ${tab === t ? "bg-sheet font-semibold text-ink shadow-sm" : "text-muted"}`}>
+                  {t === "sources" ? "Từ tài liệu" : "Agent đã làm gì"}
                 </button>
               ))}
             </div>
-            <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); send(text, null); }}>
-              <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} maxLength={3000}
-                placeholder="Nói theo cách cậu hiểu — không cần chính xác từng chữ"
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(text, null); } }}
-                className="flex-1 resize-none rounded-xl border border-line bg-sheet px-4 py-3 outline-none focus:border-mirror" />
-              <button disabled={sending || !text.trim()} className="rounded-xl bg-ink text-paper px-5 py-3 font-semibold disabled:opacity-40">Gửi</button>
-            </form>
-          </div>
-        )}
-        {finished && (
-          <p className="py-8 text-sm text-muted">Phiên đã kết thúc. <Link to="/" className="underline">Mở phiên mới</Link></p>
+            <div className="mt-4">
+              {tab === "sources" ? (
+                allCitations.length ? (
+                  <ul className="space-y-4">
+                    {allCitations.map(({ key, c, n }) => (
+                      <li key={key} id={`cite-${key}`} className={`rounded-lg text-sm transition-colors ${active === key ? "-mx-2 bg-marker/30 px-2 py-1" : ""}`}>
+                        <p className="text-xs text-muted">[{n}] {c.documentTitle}{c.page ? `, trang ${c.page}` : ""}</p>
+                        <p className="mt-1 leading-relaxed text-ink"><span className="hl">{c.quote}</span></p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted">{s.documentIds.length ? "Khi MindMirror nhận xét dựa trên tài liệu, đoạn được trích sẽ hiện ở đây." : "Phiên này không gắn tài liệu. Chọn thư mục học liệu khi tạo phiên mới để được đối chiếu có trích dẫn."}</p>
+                )
+              ) : (
+                <TracePanel sessionId={id} version={version} />
+              )}
+            </div>
+          </aside>
         )}
       </div>
-
-      {/* Lề phải: như lề giáo trình — trích dẫn, tiêu chí, quá trình xử lý */}
-      <aside className="lg:sticky lg:top-14 lg:self-start lg:max-h-[calc(100vh-3.5rem)] lg:overflow-y-auto py-6 border-t lg:border-t-0 lg:border-l border-line lg:pl-6">
-        {s.rubric.length > 0 && (
-          <section>
-            <h2 className="text-sm font-semibold">Điều cần thể hiện</h2>
-            <ul className="mt-2 space-y-2">
-              {s.rubric.map((c) => {
-                const st = rubricStatus.get(c.id) ?? "insufficient_evidence";
-                return (
-                  <li key={c.id} className="flex gap-2 text-sm">
-                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[st]}`} title={STATUS_LABEL[st]} />
-                    <span><span className="font-medium">{c.concept}</span><span className="block text-muted text-xs">{STATUS_LABEL[st]}{c.citation.page ? ` · tr. ${c.citation.page}` : ""}</span></span>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        )}
-
-        <div className={`${s.rubric.length ? "mt-8" : ""} flex gap-4 border-b border-line text-sm`} role="tablist">
-          {(["sources", "trace"] as const).map((t) => (
-            <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-              className={`pb-2 -mb-px border-b-2 ${tab === t ? "border-ink font-semibold" : "border-transparent text-muted"}`}>
-              {t === "sources" ? "Từ tài liệu" : "Agent đã làm gì"}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-4">
-          {tab === "sources" ? (
-            allCitations.length ? (
-              <ul className="space-y-4">
-                {allCitations.map(({ key, c, n }) => (
-                  <li key={key} id={`cite-${key}`} className={`text-sm rounded-md transition-colors ${active === key ? "bg-marker/20 -mx-2 px-2 py-1" : ""}`}>
-                    <p className="text-xs text-muted">[{n}] {c.documentTitle}{c.page ? `, trang ${c.page}` : ""}</p>
-                    <p className="mt-1 font-serif leading-relaxed"><span className="hl">{c.quote}</span></p>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted">{s.documentIds.length ? "Khi MindMirror nhận xét dựa trên tài liệu, đoạn được trích sẽ hiện ở đây." : "Phiên này không gắn tài liệu. Thêm tài liệu ở trang Tài liệu để được đối chiếu có trích dẫn."}</p>
-            )
-          ) : (
-            <TracePanel sessionId={id} version={version} />
-          )}
-        </div>
-      </aside>
     </div>
   );
 }
 
-function HintLadder({ level }: { level: number }) {
+function Dot({ d = 0 }: { d?: number }) {
+  return <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-mirror" style={{ animationDelay: `${d}ms` }} />;
+}
+
+function HintLadder({ level, phase }: { level: number; phase: string }) {
   return (
-    <div className="mt-3 flex items-center gap-2 text-xs text-muted" aria-label={`Mức hỗ trợ: ${HINT_LABEL[level]}`}>
+    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted" aria-label={`Mức hỗ trợ: ${HINT_LABEL[level]}`}>
+      <span className="rounded-full bg-paper px-2 py-0.5">{phase}</span>
       <span>Mức hỗ trợ</span>
-      {[1, 2, 3].map((l) => <span key={l} className={`h-1.5 w-6 rounded-full ${l <= level ? "bg-mirror" : "bg-line"}`} />)}
+      {[1, 2, 3].map((l) => <span key={l} className={`h-1.5 w-5 rounded-full ${l <= level ? "bg-mirror" : "bg-line"}`} />)}
       <span>{HINT_LABEL[level]}</span>
     </div>
   );
 }
 
-/** Lời MindMirror: serif như chữ trong sách; [n] thành chỉ số trích dẫn bấm được. */
+/** Lời MindMirror: hỗ trợ **đậm**, gạch đầu dòng, xuống dòng; [n] thành chỉ số trích dẫn bấm được. */
 function Message({ m, active, onCite }: { m: Msg; active: string | null; onCite: (k: string) => void }) {
   if (m.role === "user") {
     return (
       <li className="flex justify-end">
-        <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-ink/[0.06] px-4 py-2.5">{m.text}</p>
+        <p className="max-w-[80%] whitespace-pre-wrap rounded-2xl bg-mist px-4 py-3 text-[0.95rem] leading-relaxed text-ink">{m.text}</p>
       </li>
     );
   }
-  const parts = m.text.split(/(\[\d+(?:,\s*\d+)*\])/g);
+  const inline = (line: string, li: number): ReactNode[] =>
+    line.split(/(\*\*[^*]+\*\*|\[\d+(?:,\s*\d+)*\])/g).map((p, i) => {
+      if (/^\*\*[^*]+\*\*$/.test(p)) return <strong key={`${li}-${i}`} className="font-semibold text-ink">{p.slice(2, -2)}</strong>;
+      const nums = /^\[(\d+(?:,\s*\d+)*)\]$/.exec(p)?.[1];
+      if (!nums || !m.citations?.length) return <Fragment key={`${li}-${i}`}>{p}</Fragment>;
+      return nums.split(",").map((n) => n.trim()).map((n) => {
+        const key = `${m.id}:${n}`;
+        const c = m.citations[Number(n) - 1];
+        return c ? (
+          <button key={`${li}-${i}-${n}`} className={`cite-ref ${active === key ? "bg-marker/60" : ""}`} title={`${c.documentTitle}${c.page ? `, tr. ${c.page}` : ""}`}
+            onClick={() => { onCite(key); setTimeout(() => document.getElementById(`cite-${key}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 50); }}>{n}</button>
+        ) : null;
+      });
+    });
+  const lines = m.text.split("\n");
+  const blocks: ReactNode[] = [];
+  let bullets: string[] = [];
+  const flush = (k: number) => { if (bullets.length) { blocks.push(<ul key={`u${k}`} className="ml-5 list-disc space-y-1">{bullets.map((b, i) => <li key={i}>{inline(b, k * 100 + i)}</li>)}</ul>); bullets = []; } };
+  lines.forEach((l, k) => {
+    const b = /^\s*[-•*]\s+(.*)$/.exec(l);
+    if (b) { bullets.push(b[1] ?? ""); return; }
+    flush(k);
+    if (l.trim()) blocks.push(<p key={k}>{inline(l, k)}</p>);
+  });
+  flush(lines.length);
   return (
-    <li className="max-w-[68ch] font-serif text-[1.07rem] leading-[1.7] whitespace-pre-wrap">
-      {parts.map((p, i) => {
-        const nums = /^\[(\d+(?:,\s*\d+)*)\]$/.exec(p)?.[1];
-        if (!nums || !m.citations?.length) return <Fragment key={i}>{p}</Fragment>;
-        return nums.split(",").map((n) => n.trim()).map((n) => {
-          const key = `${m.id}:${n}`;
-          const c = m.citations[Number(n) - 1];
-          return c ? (
-            <button key={`${i}-${n}`} className={`cite-ref ${active === key ? "bg-marker/60" : ""}`}
-              title={`${c.documentTitle}${c.page ? `, tr. ${c.page}` : ""}`}
-              onClick={() => { onCite(key); document.getElementById(`cite-${key}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }}>
-              {n}
-            </button>
-          ) : null;
-        });
-      })}
+    <li className="flex gap-3">
+      <Logo size={32} className="mt-0.5 shrink-0 rounded-full" />
+      <div className="min-w-0 max-w-[72ch]">
+        <p className="mb-1.5 text-sm font-semibold text-ink">MindMirror</p>
+        <div className="space-y-2.5 text-[0.95rem] leading-[1.7] text-ink/90">{blocks}</div>
+      </div>
     </li>
   );
 }
