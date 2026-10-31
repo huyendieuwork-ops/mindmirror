@@ -57,7 +57,7 @@ export class GeminiProvider implements LLMProvider {
       // Không đẩy body lỗi (có thể chứa prompt) ra ngoài.
       // Chỉ lấy mã lý do của Google (vd API_KEY_INVALID), không lấy nội dung.
       let reason = "";
-      try { const e: any = await r.clone().json(); reason = e?.error?.details?.find((d: any) => d?.reason)?.reason ?? e?.error?.status ?? ""; } catch {}
+      try { const e: any = await r.clone().json(); reason = e?.error?.details?.find((d: any) => d?.reason)?.reason ?? e?.error?.status ?? ""; if (e?.error?.status === "FAILED_PRECONDITION") reason += ": " + String(e?.error?.message ?? "").slice(0, 120); } catch {}
       throw new ProviderError(`Gemini HTTP ${r.status}${reason ? " " + reason : ""}`, r.status, this.provider, parseRetryAfter(r.headers.get("retry-after")));
     }
     const obj: any = await r.json();
