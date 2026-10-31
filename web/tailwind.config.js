@@ -14,10 +14,12 @@ export default {
         rust: "rgb(var(--rust) / <alpha-value>)",
         muted: "rgb(var(--muted) / <alpha-value>)",
         line: "rgb(var(--line) / <alpha-value>)",
+        mist: "rgb(var(--mist) / <alpha-value>)",
+        skyish: "rgb(var(--sky) / <alpha-value>)",
       },
       fontFamily: {
         sans: ['"Be Vietnam Pro"', "system-ui", "Segoe UI", "Roboto", "sans-serif"],
-        serif: ['"Source Serif 4"', "Georgia", "Times New Roman", "serif"],
+        serif: ['"Nunito"', '"Be Vietnam Pro"', "system-ui", "sans-serif"],
       },
     },
   },
