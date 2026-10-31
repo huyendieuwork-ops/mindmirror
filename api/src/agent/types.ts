@@ -78,6 +78,7 @@ export interface LibraryDocument {
   contentHash: string;
   warnings: string[];          // vd "scanned_pages:3,7", "suspicious_instructions"
   createdAt: string;
+  folderId?: string | null;    // thư mục (My Folder), null = chưa xếp
 }
 
 export interface Chunk {
