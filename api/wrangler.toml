@@ -3,6 +3,15 @@ main = "src/index.ts"
 compatibility_date = "2024-10-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Gemini chặn một số vùng (vd trạm Cloudflare ở Hồng Kông → lỗi 400 FAILED_PRECONDITION).
+# Ép Worker chạy ở Mỹ để gọi API AI ổn định.
+[placement]
+region = "gcp:us-central1"
+
+# Giữ nhật ký lỗi trên dashboard Cloudflare (Observability).
+[observability]
+enabled = true
+
 # Một Worker phục vụ cả giao diện (web/dist) lẫn API → một địa chỉ duy nhất, không cần CORS.
 # Request /api/* và /health chạy code Worker; mọi đường dẫn khác trả file tĩnh, đường dẫn lạ trả index.html (SPA).
 [assets]
