@@ -1,0 +1,105 @@
+import { supabase, DEV_USER } from "./supabase";
+
+const BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+
+// ---------- kiểu dữ liệu trả về từ backend ----------
+export type Mode = "explore" | "reunderstand";
+export type Intent = "hint" | "show_answer" | "explain_more" | "give_example" | "try" | "skip" | "change_topic" | "switch_mode" | "finish";
+export interface Citation { chunkId: string; documentId: string; documentTitle: string; page: number | null; quote: string }
+export interface Criterion { id: string; concept: string; expectation: string; citation: Citation }
+export interface Msg { id: string; role: "user" | "assistant"; text: string; action: string | null; citations: Citation[] }
+export interface Evidence { id: string; criterion: string; claim: string; quote: string; status: "observed" | "unclear" | "contradicted"; assisted: boolean; criterionId: string | null; sourceCitation: Citation | null; context: string }
+export interface Gap { id: string; concept: string; status: string; supportLevel: number }
+export type CriterionStatus = "demonstrated_independent" | "demonstrated_with_support" | "needs_practice" | "insufficient_evidence";
+export interface Assessment {
+  grounded: boolean; note: string;
+  criteria: { criterionId: string | null; concept: string; status: CriterionStatus; applied: boolean; evidenceIds: string[]; sourceCitation: Citation | null }[];
+  counts: Record<CriterionStatus, number>;
+}
+export interface MirrorCard {
+  topic: string; mode: Mode; initialThought: string | null;
+  demonstrated: { text: string; evidenceIds: string[]; assisted: boolean }[];
+  changed: string | null; unresolved: string[]; nextStep: string; insufficientEvidence: boolean;
+  assessment: Assessment; generatedBy: "model" | "rules";
+}
+export interface SessionView {
+  id: string; status: "active" | "paused" | "finished"; mode: Mode; phase: string; topic: string; goal: string | null;
+  hintLevel: number; turnCount: number; messages: Msg[]; gaps: Gap[]; evidence: Evidence[];
+  documentIds: string[]; rubric: Criterion[]; card?: MirrorCard | null; traceId?: string;
+}
+export interface TurnResult {
+  turnId: string; phase: string; action: string; assistantText: string; hintLevel: number; gaps: Gap[];
+  newEvidence: Evidence[]; suggestModeSwitch: Mode | null; quickReplies: Intent[]; isFinished: boolean;
+  card?: MirrorCard; citations: Citation[]; traceId: string | null; modelInfo: { provider: string; model: string } | null;
+}
+export interface LibraryDoc { id: string; title: string; kind: string; pageCount: number; chunkCount: number; embedded: boolean; warnings: string[]; createdAt: string; origin: unknown }
+export interface Connector { id: string; name: string; preset: string; host: string; hasToken: boolean; tools: { search: string; fetch: string } }
+export interface Settings { aiStyle: "friendly" | "concise" | "academic"; supportPreference: "socratic_first" | "direct" | "flexible"; challengeLevel: "gentle" | "balanced" | "deep"; selfAssessment: boolean }
+export interface AppConfig { env: string; devAuth: boolean; model: string; embeddings: boolean; tracing: string[]; limits: { sessionsPerDay: number; turnsPerSession: number; inputChars: number } }
+export interface TraceRecord { traceId: string; name: string; createdAt: string; summary: { totalMs: number | null; llmCalls: number; llmErrors: number; fallbacks: number; inputTokens: number; outputTokens: number; costUsd: number; errors: { span: string; error?: string }[]; steps: { name: string; kind: string; ms: number; status: string }[] } }
+
+export class ApiError extends Error {
+  constructor(readonly status: number, readonly code: string, readonly body: any) { super(code); }
+}
+
+/** Thông báo lỗi bằng lời người dùng hiểu được (không xin lỗi, nói rõ cần làm gì). */
+export function explain(e: unknown): string {
+  if (!(e instanceof ApiError)) return "Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.";
+  const m: Record<string, string> = {
+    unauthorized: "Phiên đăng nhập đã hết hạn. Đăng nhập lại để tiếp tục.",
+    session_quota_reached: `Đã dùng hết ${e.body?.limit ?? ""} phiên của hôm nay. Mai cậu quay lại nhé.`,
+    input_too_long: `Tin nhắn dài quá ${e.body?.max ?? 3000} ký tự. Rút gọn hoặc tách làm hai.`,
+    agent_unavailable: "MindMirror tạm thời chưa phản hồi được. Tin nhắn vẫn còn — bấm Gửi lại sau vài giây.",
+    session_finished: "Phiên này đã kết thúc. Mở phiên mới để học tiếp.",
+    document_not_found: "Có tài liệu đã bị xoá khỏi thư viện. Chọn lại tài liệu.",
+    ingest_scanned_only: "File này chỉ có ảnh scan, chưa đọc được chữ. Thử bản PDF có thể chọn chữ.",
+    ingest_too_large: "Tài liệu quá lớn (tối đa 400 trang). Tách thành nhiều file nhỏ hơn.",
+    ingest_empty: "File không có nội dung chữ.",
+    invalid_mcp_url: "Địa chỉ MCP không hợp lệ: cần https và không phải địa chỉ nội bộ.",
+    mcp_unreachable: "Không kết nối được MCP server. Kiểm tra địa chỉ và token.",
+    no_search_tool: "MCP server này không có công cụ tìm kiếm tài liệu.",
+    connector_encryption_not_configured: "Máy chủ chưa đặt khoá mã hoá token (CONNECTOR_ENC_KEY).",
+  };
+  return m[e.code] ?? `Lỗi ${e.status}: ${e.code}`;
+}
+
+async function headers(): Promise<Record<string, string>> {
+  const h: Record<string, string> = { "content-type": "application/json" };
+  if (supabase) {
+    const { data } = await supabase.auth.getSession();
+    if (data.session) h.authorization = `Bearer ${data.session.access_token}`;
+  } else h["x-dev-user"] = DEV_USER;
+  return h;
+}
+
+async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const r = await fetch(`${BASE}${path}`, { method, headers: await headers(), body: body === undefined ? undefined : JSON.stringify(body) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new ApiError(r.status, data?.error ?? "error", data);
+  return data as T;
+}
+
+export const api = {
+  config: () => req<AppConfig>("GET", "/api/config"),
+  createSession: (b: { mode: Mode; topic: string; goal?: string; self_confidence?: string | null; document_ids?: string[] }) => req<SessionView>("POST", "/api/sessions", b),
+  listSessions: () => req<{ items: { id: string; mode: Mode; topic: string; phase: string; status: string; updatedAt: string }[] }>("GET", "/api/sessions"),
+  getSession: (id: string) => req<SessionView>("GET", `/api/sessions/${id}`),
+  turn: (id: string, b: { text: string; intent?: Intent | null; client_turn_id: string }) => req<TurnResult>("POST", `/api/sessions/${id}/turn`, b),
+  finish: (id: string) => req<TurnResult>("POST", `/api/sessions/${id}/finish`, { client_turn_id: `finish-${id}` }),
+  pause: (id: string) => req<{ status: string }>("POST", `/api/sessions/${id}/pause`, {}),
+  assessment: (id: string) => req<Assessment>("GET", `/api/sessions/${id}/assessment`),
+  traces: (id: string) => req<{ items: TraceRecord[] }>("GET", `/api/sessions/${id}/traces`),
+  documents: () => req<{ items: LibraryDoc[] }>("GET", "/api/documents"),
+  uploadDocument: (b: { title: string; kind: string; pages: { page: number | null; text: string }[] }) => req<{ document: LibraryDoc; duplicate: boolean }>("POST", "/api/documents", b),
+  deleteDocument: (id: string) => req("DELETE", `/api/documents/${id}`),
+  connectors: () => req<{ items: Connector[] }>("GET", "/api/connectors"),
+  addConnector: (b: { name: string; url: string; preset: string; token?: string }) => req<Connector>("POST", "/api/connectors", b),
+  deleteConnector: (id: string) => req("DELETE", `/api/connectors/${id}`),
+  connectorItems: (id: string, q: string) => req<{ items: { id: string; title: string; mimeType?: string | null }[] }>("GET", `/api/connectors/${id}/items?q=${encodeURIComponent(q)}`),
+  importItems: (id: string, items: { id: string; title: string }[]) => req<{ results: { item: { id: string; title: string }; document?: LibraryDoc; error?: string }[] }>("POST", `/api/connectors/${id}/import`, { items }),
+  settings: () => req<Settings>("GET", "/api/me/settings"),
+  saveSettings: (s: Partial<Settings>) => req<Settings>("PATCH", "/api/me/settings", s),
+  deleteData: (scope: "sessions" | "all") => req("DELETE", "/api/me/data", { scope, confirm: "XOA" }),
+};
+
+export const newTurnId = () => (crypto.randomUUID?.() ?? `t-${Date.now()}-${Math.random().toString(36).slice(2)}`);

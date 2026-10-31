@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: 31 42 68;       /* #1F2A44 mực chàm */
+  --paper: 244 246 245;  /* #F4F6F5 giấy lạnh */
+  --sheet: 255 255 255;
+  --mirror: 95 127 160;  /* #5F7FA0 xanh gương */
+  --marker: 242 210 75;  /* #F2D24B bút dạ quang */
+  --moss: 62 125 99;     /* #3E7D63 */
+  --rust: 176 84 60;     /* #B0543C */
+  --muted: 96 106 128;
+  --line: 214 221 228;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: 228 233 241;
+    --paper: 20 26 43;
+    --sheet: 28 36 58;
+    --mirror: 140 170 200;
+    --marker: 201 168 58;
+    --moss: 112 182 148;
+    --rust: 226 132 106;
+    --muted: 150 160 182;
+    --line: 52 63 92;
+    color-scheme: dark;
+  }
+}
+
+html, body, #root { height: 100%; }
+body { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Điểm nhấn duy nhất: trích dẫn như vết bút dạ quang trên giáo trình */
+.hl {
+  background: linear-gradient(transparent 52%, rgb(var(--marker) / 0.75) 52%, rgb(var(--marker) / 0.75) 92%, transparent 92%);
+  padding: 0 0.1em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+@media (prefers-color-scheme: dark) {
+  .hl { background: linear-gradient(transparent 52%, rgb(var(--marker) / 0.45) 52%, rgb(var(--marker) / 0.45) 92%, transparent 92%); }
+}
+.cite-ref {
+  font-size: 0.72em; vertical-align: super; font-weight: 600; color: rgb(var(--mirror));
+  padding: 0 0.15em; cursor: pointer; border-radius: 3px;
+}
+.cite-ref:hover, .cite-ref:focus-visible { background: rgb(var(--marker) / 0.6); color: rgb(var(--ink)); outline: none; }
+
+:focus-visible { outline: 2px solid rgb(var(--mirror)); outline-offset: 2px; }
+
+.reveal { animation: reveal 520ms cubic-bezier(.2,.7,.2,1) both; }
+@keyframes reveal { from { opacity: 0; transform: translateY(6px) scaleY(.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .reveal { animation: none; } }

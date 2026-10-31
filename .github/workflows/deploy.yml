@@ -1,0 +1,103 @@
+name: deploy
+# Mỗi lần đẩy code lên nhánh main: kiểm thử → tạo bảng Supabase → build giao diện → deploy lên Cloudflare.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: { group: deploy, cancel-in-progress: false }
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_CF: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+      HAS_DB: ${{ secrets.SUPABASE_DB_URL != '' }}
+      HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+
+      - name: Cài thư viện
+        run: |
+          npm ci
+          npm ci --prefix api
+          npm ci --prefix web
+
+      - name: Kiểm thử
+        run: |
+          npm run typecheck --prefix api
+          npm test --prefix api
+          npm run eval:retrieval --prefix api -- --ci
+
+      - name: Tạo / cập nhật bảng Supabase
+        if: env.HAS_DB == 'true'
+        run: node setup.mjs migrate
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
+      - name: Build giao diện
+        run: npm run build --prefix web
+        env:
+          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+
+      - name: Chưa có khoá Cloudflare
+        if: env.HAS_CF != 'true'
+        run: echo "::warning::Thêm secret CLOUDFLARE_API_TOKEN và CLOUDFLARE_ACCOUNT_ID (Settings → Secrets and variables → Actions) rồi chạy lại workflow để đưa web lên mạng."
+
+      - name: Cấu hình deploy
+        id: cfg
+        if: env.HAS_CF == 'true'
+        run: node scripts/ci-render-config.mjs
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          WORKER_NAME: ${{ vars.WORKER_NAME }}
+
+      - name: Deploy lên Cloudflare
+        id: deploy
+        if: env.HAS_CF == 'true'
+        working-directory: api
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler deploy --config wrangler.deploy.toml | tee deploy.log
+          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Lưu khoá bí mật vào Cloudflare
+        if: env.HAS_CF == 'true'
+        working-directory: api
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          CONNECTOR_ENC_KEY: ${{ secrets.CONNECTOR_ENC_KEY }}
+        run: |
+          F="$RUNNER_TEMP/s.json"
+          node ../scripts/ci-secrets.mjs "$F"
+          if [ "$(cat "$F")" != "{}" ]; then npx wrangler secret bulk "$F" --config wrangler.deploy.toml; fi
+          rm -f "$F"
+
+      - name: Kiểm tra web
+        if: env.HAS_CF == 'true' && steps.deploy.outputs.url != ''
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          for i in 1 2 3 4 5 6; do curl -fsS "$URL/health" && break || sleep 5; done
+          curl -fsS "$URL/api/config"; echo
+          curl -fsS "$URL/" | grep -q "MindMirror"
+          {
+            echo "## 🪞 MindMirror đã lên mạng"
+            echo ""
+            echo "**Địa chỉ:** $URL"
+            echo ""
+            echo "Chế độ: \`${{ steps.cfg.outputs.app_env }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

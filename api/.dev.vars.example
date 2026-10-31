@@ -1,0 +1,12 @@
+GEMINI_API_KEY=
+GROQ_API_KEY=
+CF_AIG_TOKEN=
+SUPABASE_SERVICE_ROLE_KEY=
+# Chỉ dùng khi APP_ENV=development: cho phép header X-Dev-User thay JWT
+DEV_AUTH_BYPASS=true
+# MCP: khoá mã hoá token connector (openssl rand -base64 32)
+CONNECTOR_ENC_KEY=
+# Observability (điền 1 trong 2 hoặc cả hai)
+LANGFUSE_PUBLIC_KEY=
+LANGFUSE_SECRET_KEY=
+LANGSMITH_API_KEY=

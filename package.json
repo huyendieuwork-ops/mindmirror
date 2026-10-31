@@ -1,0 +1,11 @@
+{
+  "name": "mindmirror",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node setup.mjs",
+    "deploy": "node setup.mjs deploy",
+    "migrate": "node setup.mjs migrate"
+  },
+  "dependencies": { "pg": "^8.13.0" }
+}

@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+.env.*
+dist/
+api/eval/reports/
+.mindmirror-deploy.json
+api/wrangler.deploy.toml
+web/.env.local

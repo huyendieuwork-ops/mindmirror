@@ -1,0 +1,24 @@
+name: ci
+on: [pull_request]
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: api } }
+    env:
+      HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' }}   # secrets không dùng trực tiếp trong if
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: api/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # Retrieval eval chạy offline (không tốn quota) — chặn merge nếu RAG tụt chất lượng
+      - run: npm run eval -- --suite retrieval --ci
+      # Eval có model thật: chỉ chạy khi có secret (vd nhánh main / chạy tay)
+      - if: env.HAS_GEMINI == 'true'
+        run: npm run eval -- --suite judgment --runs 3 --ci
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}

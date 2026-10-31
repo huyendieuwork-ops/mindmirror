@@ -1,0 +1,46 @@
+name = "mindmirror-api"
+main = "src/index.ts"
+compatibility_date = "2024-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Một Worker phục vụ cả giao diện (web/dist) lẫn API → một địa chỉ duy nhất, không cần CORS.
+# Request /api/* và /health chạy code Worker; mọi đường dẫn khác trả file tĩnh, đường dẫn lạ trả index.html (SPA).
+[assets]
+directory = "../web/dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/health"]
+
+[vars]
+APP_ENV = "development"
+CF_ACCOUNT_ID = ""            # điền Account ID Cloudflare
+CF_GATEWAY_ID = "mindmirror-mvp"
+GEMINI_API_VERSION = "v1beta"
+MODEL_CORE = "gemini-3.8-flash"
+MODEL_LIGHT = "gemini-3.5-flash-lite"
+MODEL_FALLBACK = "openai/gpt-oss-120b"
+SUPABASE_URL = ""             # https://<project>.supabase.co
+ALLOWED_ORIGIN = "http://localhost:5173"   # chỉ cần khi frontend chạy ở domain khác
+# Hạn mức sản phẩm (không phải quota nhà cung cấp)
+LIMIT_SESSIONS_PER_DAY = "3"
+LIMIT_TURNS_PER_SESSION = "12"
+LIMIT_INPUT_CHARS = "3000"
+# RAG
+MODEL_EMBED = "gemini-embedding-001"
+EMBED_DIMS = "768"
+# Observability: metadata (mặc định, không ghi nội dung học) | redacted | full
+TRACE_CONTENT = "metadata"
+TRACE_CONSOLE = "false"
+LANGFUSE_HOST = "https://cloud.langfuse.com"
+LANGSMITH_PROJECT = "mindmirror"
+# MCP: giới hạn host được phép kết nối (để trống = mọi host https công khai)
+MCP_ALLOWED_HOSTS = ""
+
+# Secrets — KHÔNG ghi ở đây, dùng:
+#   npx wrangler secret put GEMINI_API_KEY
+#   npx wrangler secret put GROQ_API_KEY
+#   npx wrangler secret put CF_AIG_TOKEN
+#   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+#   npx wrangler secret put CONNECTOR_ENC_KEY        # openssl rand -base64 32
+#   npx wrangler secret put LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY   (tuỳ chọn)
+#   npx wrangler secret put LANGSMITH_API_KEY                           (tuỳ chọn)
+# Khi chạy local, đặt chúng trong api/.dev.vars (đã có trong .gitignore)
