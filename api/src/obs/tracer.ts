@@ -133,6 +133,10 @@ export class Trace {
       retrieval: this.data.spans
         .filter((s) => s.kind === "retriever")
         .map((s) => ({ purpose: s.attrs.purpose ?? null, method: s.attrs.method ?? null, hits: Array.isArray(s.attrs.results) ? s.attrs.results.length : 0, ms: dur(s) })),
+      // Đợt 2: các trang web chính thống đã dùng (địa chỉ công khai, không có nội dung người học)
+      web: this.data.spans
+        .filter((s) => s.name === "web.pages")
+        .map((s) => ({ method: s.attrs.method ?? null, fromCache: s.attrs.from_cache === true, pages: Array.isArray(s.attrs.results) ? (s.attrs.results as string[]) : [], rejected: Array.isArray(s.attrs.rejected) ? (s.attrs.rejected as unknown[]).length : 0, note: s.attrs.note ?? null })),
       retries: this.data.spans.filter((s) => s.name === "llm.retry").length,
       models: [...new Set(gens.map((g) => g.model).filter(Boolean))],
       costNote: "Chi phí ƯỚC TÍNH theo bảng giá công khai (obs/pricing.ts); free tier không bị tính phí — hoá đơn thật xem ở Google AI Studio.",

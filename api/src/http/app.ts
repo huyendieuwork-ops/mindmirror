@@ -4,7 +4,8 @@ import { z } from "zod";
 import { AgentUnavailableError, createSession, prepareGroundedSession, runTurn } from "../agent/engine";
 import { assessLearner } from "../agent/assessment";
 import { DEFAULT_SETTINGS, type Session } from "../agent/types";
-import { buildEmbedder, buildExporters, buildRouters, contentMode, num, type Env } from "../env";
+import { buildEmbedder, buildExporters, buildRouters, buildWebSearcher, contentMode, num, type Env } from "../env";
+import type { WebSearcher } from "../web/search";
 import type { ModelRouter, CallLog } from "../providers/router";
 import { MemoryStore } from "../store/memory";
 import { SupabaseStore } from "../store/supabase";
@@ -29,6 +30,7 @@ export interface AppOverrides {
   exporters?: TraceExporter[];
   mcpFetch?: typeof fetch;      // test: giả lập MCP server
   allowLocalMcp?: boolean;      // dev/test: cho phép MCP chạy ở localhost
+  web?: WebSearcher | null;     // test: tìm nguồn web giả lập (mặc định tắt khi routers bị thay)
 }
 
 // Khoá dev cố định — CHỈ dùng khi APP_ENV=development và chưa đặt CONNECTOR_ENC_KEY.
@@ -98,6 +100,7 @@ export function createApp(over: AppOverrides = {}) {
       model: env.GEMINI_API_KEY ? env.MODEL_CORE ?? "gemini-3.8-flash" : "demo-offline",
       embeddings: !!env.GEMINI_API_KEY,
       tracing: [env.LANGFUSE_PUBLIC_KEY ? "langfuse" : null, env.LANGSMITH_API_KEY ? "langsmith" : null].filter(Boolean),
+      webSearch: (env.WEB_SEARCH ?? "").toLowerCase() === "off" ? null : env.TAVILY_API_KEY ? "tavily" : "wikipedia",
       limits: { sessionsPerDay: num(env.LIMIT_SESSIONS_PER_DAY, 3), turnsPerSession: num(env.LIMIT_TURNS_PER_SESSION, 12), inputChars: num(env.LIMIT_INPUT_CHARS, 3000) },
     });
   });
@@ -270,6 +273,7 @@ export function createApp(over: AppOverrides = {}) {
       const { session: next, result } = await runTurn(session, { text, intent }, {
         core, light, trace, retriever: new Retriever(store, embedderFor(env)),
         tools: { store }, maxInputChars: maxChars,
+        web: over.web !== undefined ? over.web : over.routers ? null : buildWebSearcher(env, store),
         maxToolRounds: num(env.MAX_TOOL_ROUNDS, 1), maxLlmCallsPerTurn: num(env.MAX_LLM_CALLS_PER_TURN, 3),
         limits: { turnsPerSession: num(env.LIMIT_TURNS_PER_SESSION, 12), maxRoundsSameGap: 2, maxAgentLedRounds: 6 },
       });
@@ -548,7 +552,7 @@ function publicSession(s: Session) {
     goal: s.state.goal,
     hintLevel: s.state.hintLevel,
     turnCount: s.state.turnCount,
-    messages: s.messages.map((m) => ({ id: m.id, role: m.role, text: m.text, action: m.action, citations: m.citations ?? [] })),
+    messages: s.messages.map((m) => ({ id: m.id, role: m.role, text: m.text, action: m.action, citations: m.citations ?? [], webCitations: m.webCitations ?? [] })),
     gaps: s.gaps,
     evidence: s.evidence,
     documentIds: s.documentIds,

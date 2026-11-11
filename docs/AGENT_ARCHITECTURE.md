@@ -29,7 +29,7 @@ flowchart LR
 | MCP | `api/src/mcp/server.ts` (server), `client.ts` (client) | Phơi bày công cụ chỉ-đọc; nhập học liệu từ Drive/Notion |
 | Guardrails | `api/src/agent/input-guard.ts`, `guardrails.ts`, `evidence.ts`, `rag/grounding.ts` | Đầu vào, đánh giá, đầu ra, bảo mật |
 | Observability | `api/src/obs/tracer.ts` | Trace từng bước, token, chi phí ước tính, guardrail, tool, retry |
-| Evals | `api/scripts/agent-eval.ts`, `eval/agent-cases.json`, `scripts/eval.ts` | 51 ca agent + 14 ca retrieval + 14 ca judgment |
+| Evals | `api/scripts/agent-eval.ts`, `eval/agent-cases.json`, `scripts/eval.ts` | 64 ca agent (52 offline + 12 live) + 14 ca retrieval + 14 ca judgment |
 
 ## 2. Workflow "Kiểm tra kiến thức" (Socratic Learning Agent)
 
@@ -82,12 +82,24 @@ Lượt 1 và lượt 3 được kiểm thử tự động (`test/agent-mvp.test
 | `get_learning_history` | model, MCP | ✔ | chỉ phiên của `userId` |
 | `get_knowledge_gaps` | model, MCP | ✔ | chỉ phiên của `userId` |
 | `save_session_summary` | **chỉ workflow** khi kết thúc | ✘ | phiên phải thuộc `userId`; model/MCP gọi → `forbidden` |
+| `search_trusted_sources` (Đợt 2) | **chỉ workflow** Khám phá, tối đa 1 lần/lượt | ✔ | chỉ trang trong danh sách nguồn chính thống; không phơi bày qua MCP; hạn mức 20 lượt/người/ngày |
 
 - **Native tool calling** (trong Worker): engine khai báo một *tập con* công cụ cho Gemini ở lượt có ích — có tài liệu trong thư viện và (phiên chưa gắn tài liệu hoặc người học nhắc tới tài liệu), hoặc người học nhắc tới buổi trước. Model **tự quyết** có gọi hay không. Không mở công cụ khi không cần → không tốn token/lời gọi thừa.
 - **MCP server** (`POST /mcp`, JSON-RPC 2.0 Streamable HTTP): phơi bày **cùng registry** cho client bên ngoài, chỉ 3 công cụ chỉ-đọc; xác thực bằng Bearer JWT của Supabase; giới hạn 30 lời gọi/phút; mỗi request ghi trace `mcp.*`. Không có logic tìm kiếm thứ hai.
 - **MCP client** (có sẵn): kết nối Drive/Notion để **nhập** học liệu vào thư viện (người dùng chọn từng file); tài liệu nhập đi đúng đường RAG.
 
 **Đường đi RAG**: trình duyệt trích chữ PDF/PPTX → `POST /api/documents` → cắt đoạn theo trang (giữ tiêu đề, đánh dấu đoạn nghi chỉ thị) → embedding Gemini (nếu có key) → lưu `chunks` (pgvector + full-text) → truy vấn lai BM25 + vector gộp RRF, **luôn lọc theo user_id** → đưa ≤ 4 đoạn (≤ 1600 ký tự/đoạn) vào prompt dưới nhãn `S1..` → backend chỉ giữ trích dẫn có **nguyên văn** trong đúng đoạn → hiển thị tên tài liệu + trang. Không tìm thấy đoạn phù hợp → prompt ghi rõ "không được trích dẫn tài liệu ở lượt này". Embedding câu truy vấn được cache (LRU 200 mục).
+
+### Nguồn chính thống — `search_trusted_sources` (Đợt 2)
+
+- **Thứ tự nguồn:** tài liệu người học `[1]` → nguồn chính thống `[W1]` → kiến thức chung (ghi "kiến thức chung, chưa đối chiếu nguồn"). Đã đủ căn cứ ở tài liệu thì không tìm web.
+- **Điều kiện gọi (G1–G5, `engine.ts` bước 4d):** chế độ Khám phá; lượt có gọi model; lần gọi 1 đặt `needs_source=true`; lần gọi 1 không có trích dẫn tài liệu hợp lệ; còn ngân sách (đã dùng ≤ 1 lần gọi model) và có cấu hình tìm web. Thỏa cả năm → workflow gọi công cụ **đúng 1 lần** → gọi model lần 2 với khối `<web_sources>` (W1..). Tổng ≤ 3 lần gọi/lượt.
+- **Danh sách trang** (`api/src/web/allowlist.ts`, đặt cố định trong code, sửa qua PR): postgresql.org/docs, dev.mysql.com/doc, learn.microsoft.com (sql, office), sqlite.org, vi/en.wikipedia.org/wiki, openstax.org/books, *.edu.vn, *.gov.vn.
+- **Kiểm tra link:** L1 https · L2 không IP/cổng/tên đăng nhập · L3 tên máy chủ bằng đúng tên miền hoặc `.tên-miền` · L4 tiền tố đường dẫn · L5 tự xử lý chuyển hướng (≤ 3, mỗi bước qua L1–L4) · L6 link hiển thị là địa chỉ cuối code đã tải · L7 xoá mọi link model tự thêm. Tải trang: ≤ 5 s, ≤ 500 KB, chỉ HTML/text, ≤ 3 trang/lượt, không đi theo link trong trang.
+- **Trích dẫn:** chỉ chữ của trang code tự tải (không dùng snippet của dịch vụ tìm kiếm); `[W1]` phải có nguyên văn trong đoạn W1. Trích dẫn không hợp lệ (cả tài liệu lẫn web) → xoá nhãn **và câu khẳng định chứa nó** (sửa lỗ hổng B-1; câu hỏi được giữ). Không còn trích dẫn web hợp lệ → thêm câu nói rõ là kiến thức chung, chưa đối chiếu được.
+- **Dịch vụ tìm kiếm:** có secret `TAVILY_API_KEY` → Tavily (tìm trong toàn bộ danh sách); chưa có → Wikipedia API (miễn phí). Chỉ gửi từ khoá ngắn ≤ 200 ký tự (model đề xuất `search_query`, đã bỏ email/số/link). `WEB_SEARCH=off` để tắt.
+- **Bộ nhớ lưu & hạn mức:** bảng `web_source_cache` (khoá = SHA-256(môn + truy vấn chuẩn hoá), lưu 7 ngày, dùng chung, không lưu câu hỏi gốc); `web_search_log` đếm lượt gọi dịch vụ ngoài (20/người/ngày, `LIMIT_WEB_SEARCHES_PER_DAY`). Lấy từ bộ nhớ lưu vẫn tính là lượt tìm của lượt đó, trace ghi `from_cache`.
+- **Giao diện & trace:** khung Chi tiết phiên → tab Nguồn tách "Từ tài liệu của bạn" và "Nguồn web" (tên trang, tiêu đề, link mở tab mới); `[W1]` có viền nét đứt, khác `[1]`. Chế độ kỹ thuật → "Agent đã làm gì" hiện bước "Tìm nguồn chính thống" và danh sách trang đã dùng.
 
 ## 5. Guardrails (đều là code, có test)
 
@@ -97,6 +109,7 @@ Lượt 1 và lượt 3 được kiểm thử tự động (`test/agent-mvp.test
 | Đánh giá | Quote không phải lời người học → loại; có tài liệu: chê sai phải kèm trích dẫn, khen đúng phải gắn tiêu chí/nguồn; không tài liệu + model tự báo `low` → không kết luận "sai"; không khen "đã hiểu rõ" khi lượt này chưa có bằng chứng; cấm % mức hiểu/chẩn đoán năng lực | `ga-01…06` |
 | Đầu ra | Zod schema + 1 lần sửa; action phải thuộc tập policy cho phép; trích dẫn phải có thật; chặn rò rỉ system prompt; che chuỗi giống khoá API/JWT; đo trùng lặp với đáp án mẫu (lộ đáp án); phát hiện câu hỏi lặp; fallback an toàn | `rc-01…05`, "output guard…" |
 | Bảo mật | Mọi tool kiểm quyền theo `userId`; validate tham số; model không gọi được tool ghi; MCP không phơi bày tool ghi; tài liệu bọc `<source>` + gắn cảnh báo đoạn nghi chỉ thị | `gt-01…05`, test MCP "người dùng khác…" |
+| Nguồn web (Đợt 2) | Kiểm tra link L1–L7; trích dẫn web phải có nguyên văn trong trang đã tải; đoạn web bọc `<web_source>`, đoạn nghi chỉ thị gắn cờ; xoá câu có trích dẫn bịa; tối đa 1 lần tìm/lượt; hạn mức ngày | `wl-01…03`, `ws-01…08`, `test/web.test.ts` |
 
 ### Quy tắc chấm điểm (theo tài liệu "Rule chấm điểm MindMirror")
 
@@ -114,9 +127,9 @@ Lượt 1 và lượt 3 được kiểm thử tự động (`test/agent-mvp.test
 
 ```bash
 cd api
-npm test                                  # 107 unit/integration test
-npm run eval:agent                        # 41 ca offline, deterministic, 0 API call
-npm run eval:agent -- --live --max-calls 24   # +10 ca với Gemini thật (cần GEMINI_API_KEY), giãn cách 4.2s
+npm test                                  # 144 unit/integration test
+npm run eval:agent                        # 52 ca offline (có 11 ca nguồn web), deterministic, 0 API call
+npm run eval:agent -- --live --max-calls 24   # +12 ca với Gemini thật (cần GEMINI_API_KEY; ts-03/ts-04 tìm web thật), giãn cách 4.2s
 npm run eval:retrieval                    # 14 câu truy xuất (hit@k, MRR)
 npm run eval -- --suite judgment --runs 3 # 14 ca chấm × 3 lần (κ, over-claim, nhất quán) — cần key
 ```
@@ -129,6 +142,7 @@ Báo cáo: `api/eval/reports/agent-eval-<thời gian>.md|json`. CI của mỗi P
 | guardrail (input 12, tool/quyền 5, assessment 6) | 23 | 23 | 23 |
 | rag (citation 5, retrieval 5) | 10 | 10 | 10 |
 | workflow (kịch bản 8) | 8 | 8 | 8 |
+| web — Đợt 2 (link 3, kịch bản 8; chạy 11/11/2026, nhánh `dot2-trusted-sources`) | 11 | 11 | 11 |
 
 **Kết quả live thật — CI của PR #3 (31/10/2026 UTC, `gemini-3.5-flash-lite`, 11 lời gọi, `--max-calls 24`)** — chạy 2 lần (run #5, #6), kết quả giống nhau:
 
@@ -176,6 +190,7 @@ Hoặc mở **MCP Inspector** (`npx @modelcontextprotocol/inspector`), chọn St
 
 ## 11. Giới hạn đã biết
 
+- Nguồn web: điều kiện tìm web dựa vào việc model đặt `needs_source=true` (code không tự biết tài liệu "thiếu căn cứ"); model quên đặt thì câu trả lời mang nhãn kiến thức chung. Wikipedia tìm theo tiêu đề nên phụ thuộc từ khoá model đề xuất; Tavily (khi có khoá) tìm rộng hơn trong toàn danh sách. Môn học hiện mặc định "csdl" (danh sách theo môn mới có bản CSDL).
 - Tool selection: từ đợt 1, khi người học nhắc tài liệu/slide của họ (regex `DOC_REF`) trong phiên không gắn tài liệu, workflow tự gọi `search_learning_materials` (trước đó ts-01 trượt vì model hay hỏi lại thay vì tìm). Phát hiện "nhắc tài liệu" dựa trên từ khoá, nên cách nói khác thường có thể không kích hoạt.
 - Judgment eval: độ nhất quán qua 3 lần chạy 71% (< 80%) — model dao động ở ca "đúng một phần"; cần thêm ca gán nhãn và/hoặc temperature thấp hơn cho bước chấm.
 - Phát hiện injection dựa trên mẫu (regex) — chặn được các dạng phổ biến EN/VI, không chống được mọi biến thể; lớp phòng thủ chính vẫn là: tài liệu chỉ là dữ kiện, quyền kiểm theo `userId`, mọi phán đoán phải có bằng chứng kiểm chứng bằng code.

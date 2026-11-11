@@ -17,6 +17,8 @@ import type { Retriever } from "../rag/retriever";
 import type { ToolDeclaration } from "../providers/types";
 import { NoopTrace, type SpanHandle, type Trace } from "../obs/tracer";
 import { assessLearner } from "./assessment";
+import { safeUrlForTrace, WebSearchError, type WebPassage, type WebSearcher } from "../web/search";
+import { DEFAULT_SUBJECT } from "../web/allowlist";
 
 export type ToolInitiator = "model" | "policy" | "mcp";
 
@@ -30,12 +32,14 @@ export interface ToolContext {
   initiator: ToolInitiator;
   /** Nhãn nguồn bắt đầu từ S{sourceOffset+1} để model trích dẫn đúng đoạn trả về. */
   sourceOffset?: number;
+  /** Tìm nguồn web chính thống (Đợt 2) — null/undefined = tắt. */
+  web?: WebSearcher | null;
 }
 
 export type ToolErrorCode = "invalid_input" | "forbidden" | "not_found" | "unavailable" | "internal";
 
 export type ToolResult<O = unknown> =
-  | { ok: true; data: O; chunks?: RetrievedChunk[] }
+  | { ok: true; data: O; chunks?: RetrievedChunk[]; web?: WebPassage[] }
   | { ok: false; error: { code: ToolErrorCode; message: string } };
 
 export class ToolError extends Error {
@@ -53,7 +57,7 @@ interface ToolDef<I extends z.ZodTypeAny, O extends z.ZodTypeAny> {
   /** Có cho model tự gọi không (save_session_summary chỉ do workflow gọi). */
   modelCallable: boolean;
   parameters: ToolDeclaration["parameters"];
-  run(ctx: ToolContext, input: z.infer<I>): Promise<{ data: z.infer<O>; chunks?: RetrievedChunk[] }>;
+  run(ctx: ToolContext, input: z.infer<I>): Promise<{ data: z.infer<O>; chunks?: RetrievedChunk[]; web?: WebPassage[] }>;
 }
 
 const uuid = z.string().uuid();
@@ -258,12 +262,59 @@ const saveSessionSummary: ToolDef<typeof SaveInput, typeof SaveOutput> = {
   },
 };
 
+// ---------------- 6. search_trusted_sources (Đợt 2 — chỉ workflow gọi, tối đa 1 lần/lượt) ----------------
+const WebOutput = z.object({
+  results: z.array(z.object({
+    source_id: z.string(), site_name: z.string(), title: z.string(), url: z.string(), excerpt: z.string(), suspicious: z.boolean(),
+  })),
+  from_cache: z.boolean(),
+  provider: z.string(),
+  note: z.string().nullable(),
+});
+const searchTrustedSources: ToolDef<any, typeof WebOutput> = {
+  name: "search_trusted_sources",
+  description:
+    "Tìm trong DANH SÁCH NGUỒN CHÍNH THỐNG (tài liệu chính thức, Wikipedia, sách mở…) khi tài liệu của người học không đủ căn cứ. " +
+    "Mọi link được code kiểm tra lại; chỉ trả đoạn chữ lấy từ trang code đã tự tải.",
+  input: z.object({ query: z.string().trim().min(2).max(200), subject: z.string().trim().max(20).optional().nullable() }),
+  output: WebOutput,
+  readOnly: true,
+  modelCallable: false, // quy trình Khám phá gọi theo điều kiện G1–G5, model không tự gọi
+  parameters: {
+    type: "object",
+    properties: { query: { type: "string", description: "Từ khoá ngắn (≤ 200 ký tự)" }, subject: { type: "string", description: "Mã môn, mặc định csdl" } },
+    required: ["query"],
+  },
+  async run(ctx, input) {
+    if (!ctx.web) throw new ToolError("unavailable", "web_search_disabled");
+    try {
+      const r = await ctx.web.search(ctx.userId, input.query, input.subject ?? DEFAULT_SUBJECT);
+      // Trace: các trang đã dùng (trang công khai, không có nội dung người học), bỏ qua query string.
+      ctx.trace?.start("web.pages", "retriever", ctx.parent ?? null, {
+        purpose: "web", method: r.fromCache ? "cache" : r.provider, from_cache: r.fromCache, candidates: r.candidates,
+        results: r.passages.map((p) => safeUrlForTrace(p.url)), rejected: r.rejected, note: r.note,
+      }).end();
+      return {
+        data: {
+          results: r.passages.map((p, i) => ({ source_id: `W${i + 1}`, site_name: p.siteName, title: p.title, url: p.url, excerpt: p.text.slice(0, EXCERPT), suspicious: p.suspicious })),
+          from_cache: r.fromCache, provider: r.provider, note: r.note,
+        },
+        web: r.passages,
+      };
+    } catch (e) {
+      if (e instanceof WebSearchError) throw new ToolError(e.code === "quota_exceeded" ? "forbidden" : "unavailable", e.code === "quota_exceeded" ? "daily_web_search_limit" : e.message);
+      throw e;
+    }
+  },
+};
+
 export const TOOLS = {
   search_learning_materials: searchLearningMaterials,
   retrieve_document_context: retrieveDocumentContext,
   get_learning_history: getLearningHistory,
   get_knowledge_gaps: getKnowledgeGaps,
   save_session_summary: saveSessionSummary,
+  search_trusted_sources: searchTrustedSources,
 } as const;
 
 export type ToolName = keyof typeof TOOLS;
@@ -310,8 +361,8 @@ export async function executeTool(name: string, rawArgs: unknown, ctx: ToolConte
     const out = await Promise.race([run, timeout]).finally(() => clearTimeout(timer));
     const checked = tool.output.safeParse(out.data);
     if (!checked.success) throw new ToolError("internal", "tool_output_schema_violation");
-    span.set({ ok: true, ms: Date.now() - t0, result_count: countOf(checked.data), retrieved_chunks: out.chunks?.length ?? 0 });
-    return { ok: true, data: checked.data, chunks: out.chunks };
+    span.set({ ok: true, ms: Date.now() - t0, result_count: countOf(checked.data), retrieved_chunks: out.chunks?.length ?? 0, ...(out.web ? { web_passages: out.web.length } : {}) });
+    return { ok: true, data: checked.data, chunks: out.chunks, web: out.web };
   } catch (e) {
     const err = e instanceof ToolError ? e : new ToolError("internal", "tool_failed");
     span.set({ ok: false, ms: Date.now() - t0, error_code: err.code, error: err.message }).fail(err);
