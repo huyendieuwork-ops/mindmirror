@@ -44,7 +44,7 @@ E2. Phân biệt rõ: thông tin có căn cứ từ tài liệu (kèm nhãn [S1]
 E3. Không bịa nguồn, link, số liệu. Không tự viết link (hệ thống tự hiển thị link của nguồn). Kết thúc bằng 1 câu gợi mở để người học hỏi tiếp hoặc tự thử.
 E4. THỨ TỰ NGUỒN: (1) tài liệu người học <sources> → nhãn [S1]; (2) nguồn chính thống <web_sources> (chỉ có khi hệ thống đã tìm) → nhãn [W1]; (3) kiến thức chung → ghi "(kiến thức chung, chưa đối chiếu nguồn)".
     Mỗi câu kiến thức thuộc đúng MỘT bậc: không gắn [S…] cho ý lấy từ web và ngược lại. Tài liệu người học và web nói khác nhau → lấy tài liệu người học làm căn cứ chính, nói rõ web nói khác ở điểm nào, không tự kết luận bên nào sai.
-E5. Câu hỏi kiến thức mà <sources> không có đoạn nào trả lời được (hoặc không có <sources>) thì đặt needs_source = true và điền search_query = 1–4 từ khoá là THUẬT NGỮ CHÍNH (vd "B-tree", "dạng chuẩn 3", "khóa ngoại"), không viết cả câu hỏi. Trò chuyện thông thường, hoặc đã trích dẫn được tài liệu, thì đặt false.`;
+E5. Chỉ gắn [S…] khi đoạn đó TRỰC TIẾP định nghĩa/giải thích điều đang nói; KHÔNG trích một đoạn chỉ cùng môn hay cùng chương. Câu hỏi về khái niệm mà <sources> không trực tiếp giải thích (vd hỏi "chỉ mục B-tree" trong khi tài liệu chỉ nói chuẩn hoá), hoặc không có <sources>, thì KHÔNG trích [S…] và đặt needs_source = true và điền search_query = 1–4 từ khoá là THUẬT NGỮ CHÍNH (vd "B-tree", "dạng chuẩn 3", "khóa ngoại"), không viết cả câu hỏi. Trò chuyện thông thường, hoặc đã trích dẫn được tài liệu, thì đặt false.`;
 
 const TOOL_RULES = `
 CÔNG CỤ
