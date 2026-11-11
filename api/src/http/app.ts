@@ -4,7 +4,10 @@ import { z } from "zod";
 import { AgentUnavailableError, createSession, prepareGroundedSession, runTurn } from "../agent/engine";
 import { assessLearner } from "../agent/assessment";
 import { DEFAULT_SETTINGS, type Session } from "../agent/types";
-import { buildEmbedder, buildExporters, buildRouters, buildWebSearcher, contentMode, num, type Env } from "../env";
+import { buildEmbedder, buildExporters, buildGraphStore, buildRouters, buildWebSearcher, contentMode, num, type Env } from "../env";
+import type { GraphStore } from "../graph/types";
+import { MemoryGraphStore } from "../graph/memory";
+import { buildConceptGraph, GraphBuildError } from "../graph/build";
 import type { WebSearcher } from "../web/search";
 import type { ModelRouter, CallLog } from "../providers/router";
 import { MemoryStore } from "../store/memory";
@@ -31,12 +34,14 @@ export interface AppOverrides {
   mcpFetch?: typeof fetch;      // test: giả lập MCP server
   allowLocalMcp?: boolean;      // dev/test: cho phép MCP chạy ở localhost
   web?: WebSearcher | null;     // test: tìm nguồn web giả lập (mặc định tắt khi routers bị thay)
+  graph?: GraphStore | null;    // test: đồ thị giả lập
 }
 
 // Khoá dev cố định — CHỈ dùng khi APP_ENV=development và chưa đặt CONNECTOR_ENC_KEY.
 const DEV_ENC_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
 
 const devMemory = new MemoryStore(); // chỉ dùng khi chưa cấu hình Supabase (dev)
+const devGraph = new MemoryGraphStore(); // dev: đồ thị trong RAM khi chưa có Neo4j (chỉ đi cùng devMemory)
 
 const INTENTS = ["hint", "show_answer", "explain_more", "give_example", "try", "skip", "change_topic", "switch_mode", "finish"] as const;
 
@@ -121,7 +126,7 @@ export function createApp(over: AppOverrides = {}) {
     if (body === null) return c.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400);
     const trace = new Trace("mcp.request", { userId, tags: [env.APP_ENV ?? "dev", "mcp"], contentMode: contentMode(env) });
     try {
-      const r = await handleMcp(body, { userId, store, retriever: new Retriever(store, embedderFor(env)), session: null, trace });
+      const r = await handleMcp(body, { userId, store, retriever: new Retriever(store, embedderFor(env)), session: null, trace, graph: graphFor(env, store) });
       if (r.body === null) return c.body(null, 202);
       return c.json(r.body, r.status as 200);
     } finally {
@@ -152,6 +157,8 @@ export function createApp(over: AppOverrides = {}) {
     return over.routers ? over.routers(onCall) : buildRouters(env, onCall);
   };
   const embedderFor = (env: Env) => (over.embedder !== undefined ? over.embedder : buildEmbedder(env));
+  const graphFor = (env: Env, store: Store): GraphStore | null =>
+    over.graph !== undefined ? over.graph : buildGraphStore(env) ?? (store === devMemory ? devGraph : null);
   const newTrace = (env: Env, name: string, userId: string, sessionId: string | null, tags: string[] = []) =>
     new Trace(name, { userId, sessionId, tags: [env.APP_ENV ?? "dev", ...tags], contentMode: contentMode(env) });
 
@@ -274,6 +281,7 @@ export function createApp(over: AppOverrides = {}) {
         core, light, trace, retriever: new Retriever(store, embedderFor(env)),
         tools: { store }, maxInputChars: maxChars,
         web: over.web !== undefined ? over.web : over.routers ? null : buildWebSearcher(env, store),
+        graph: graphFor(env, store),
         maxToolRounds: num(env.MAX_TOOL_ROUNDS, 1), maxLlmCallsPerTurn: num(env.MAX_LLM_CALLS_PER_TURN, 3),
         limits: { turnsPerSession: num(env.LIMIT_TURNS_PER_SESSION, 12), maxRoundsSameGap: 2, maxAgentLedRounds: 6 },
       });
@@ -382,7 +390,63 @@ export function createApp(over: AppOverrides = {}) {
 
   app.delete("/api/documents/:id", async (c) => {
     const ok = await c.var.store.deleteDocument(c.var.userId, c.req.param("id"));
+    // Xoá luôn phần đồ thị dựng từ tài liệu này (lỗi Neo4j không chặn việc xoá tài liệu).
+    if (ok) await graphFor(c.env ?? {}, c.var.store)?.deleteDocument(c.var.userId, c.req.param("id")).catch(() => {});
     return ok ? c.json({ deleted: true }) : c.json({ error: "not_found" }, 404);
+  });
+
+  // ---------- Đợt 3: Bản đồ khái niệm (GraphRAG, Neo4j) ----------
+  app.get("/api/graph/status", async (c) => {
+    const env: Env = c.env ?? {};
+    const graph = graphFor(env, c.var.store);
+    const limits = { pagesPerBuild: num(env.GRAPH_MAX_PAGES_PER_BUILD, 6), buildsPerDay: num(env.GRAPH_BUILDS_PER_DAY, 10) };
+    if (!graph) return c.json({ configured: false, connected: false, kind: null, limits });
+    try {
+      const connected = await graph.ping();
+      return c.json({ configured: true, connected, kind: graph.kind, limits });
+    } catch (e) {
+      return c.json({ configured: true, connected: false, kind: graph.kind, error: ((e as { code?: string }).code ?? "error").slice(0, 80), limits });
+    }
+  });
+
+  app.post("/api/graph/build", async (c) => {
+    const b = z.object({ document_ids: z.array(z.string().uuid()).min(1).max(5) }).safeParse(await c.req.json().catch(() => ({})));
+    if (!b.success) return c.json({ error: "invalid_body" }, 400);
+    const { userId, store } = c.var;
+    const env: Env = c.env ?? {};
+    const graph = graphFor(env, store);
+    if (!graph) return c.json({ error: "graph_not_configured" }, 503);
+    const trace = newTrace(env, "graph.build", userId, null, ["graph"]);
+    try {
+      const { core } = routersFor(env, store, userId, null);
+      const r = await buildConceptGraph({
+        userId, documentIds: b.data.document_ids, store, graph, router: core, trace,
+        maxPages: num(env.GRAPH_MAX_PAGES_PER_BUILD, 6), maxCalls: num(env.GRAPH_MAX_CALLS_PER_BUILD, 3), buildsPerDay: num(env.GRAPH_BUILDS_PER_DAY, 10),
+      });
+      return c.json(r);
+    } catch (e) {
+      if (e instanceof GraphBuildError) {
+        const status = e.code === "forbidden" ? 403 : e.code === "daily_limit" ? 429 : e.code === "graph_unavailable" ? 503 : 400;
+        return c.json({ error: `graph_${e.code}` }, status);
+      }
+      throw e;
+    } finally {
+      await flushTrace(c, trace);
+    }
+  });
+
+  app.get("/api/graph", async (c) => {
+    const { userId, store } = c.var;
+    const graph = graphFor(c.env ?? {}, store);
+    if (!graph) return c.json({ error: "graph_not_configured" }, 503);
+    const wanted = (c.req.query("document_ids") ?? "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 10);
+    const owned = new Set((await store.listDocuments(userId)).map((d) => d.id));
+    if (wanted.some((id) => !owned.has(id))) return c.json({ error: "document_not_found" }, 404);
+    try {
+      return c.json(await graph.view(userId, wanted.length ? wanted : [...owned], 60));
+    } catch {
+      return c.json({ error: "graph_graph_unavailable" }, 503);
+    }
   });
 
   app.post("/api/documents/search", async (c) => {
@@ -530,6 +594,7 @@ export function createApp(over: AppOverrides = {}) {
     if (!b.success) return c.json({ error: "confirmation_required" }, 400);
     const { userId, store } = c.var;
     await store.deleteUserData(userId, b.data.scope);
+    if (b.data.scope === "all") await graphFor(c.env ?? {}, store)?.deleteUser(userId).catch(() => {});
     return c.json({ deleted: b.data.scope });
   });
 

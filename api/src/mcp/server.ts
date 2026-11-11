@@ -12,7 +12,7 @@ import { executeTool, mcpToolList, type ToolContext, type ToolName } from "../ag
 import { MCP_PROTOCOL_VERSION } from "./client";
 import type { Trace } from "../obs/tracer";
 
-export const MCP_SERVER_TOOLS: ToolName[] = ["search_learning_materials", "get_knowledge_gaps", "get_learning_history"];
+export const MCP_SERVER_TOOLS: ToolName[] = ["search_learning_materials", "get_knowledge_gaps", "get_learning_history", "explore_concept_graph"];
 const SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
 interface RpcRequest { jsonrpc?: string; id?: string | number | null; method?: string; params?: any }

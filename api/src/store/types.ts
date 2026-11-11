@@ -92,6 +92,11 @@ export interface Store {
   setDocumentFolder?(userId: string, documentId: string, folderId: string | null): Promise<boolean>;
   /** Lấy đúng các đoạn theo id (chỉ của userId) — dùng để luôn gửi kèm đoạn tài liệu gắn với tiêu chí đang chấm. */
   getChunks?(userId: string, ids: string[]): Promise<RetrievedChunk[]>;
+  /** Mọi đoạn của MỘT tài liệu (chỉ của userId), theo thứ tự — dùng khi dựng đồ thị khái niệm. */
+  listChunks?(userId: string, documentId: string): Promise<Chunk[]>;
+  /** Đợt 3: đếm/ghi lượt dựng đồ thị (giới hạn theo ngày để giữ hạn mức Gemini). */
+  countGraphBuildsSince?(userId: string, sinceIso: string): Promise<number>;
+  logGraphBuild?(userId: string, atIso: string, pages: number): Promise<void>;
   /** Tìm kiếm lai (từ khoá + vector) CHỈ trong tài liệu của userId. */
   searchChunks(userId: string, documentIds: string[], q: ChunkQuery, k: number): Promise<RetrievedChunk[]>;
 

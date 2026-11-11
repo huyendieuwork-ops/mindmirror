@@ -1,0 +1,53 @@
+{
+  "note": "Đồ thị khái niệm chuẩn (gán tay) cho giáo trình mẫu csdl-chuan-hoa.json — mọi quote copy nguyên văn từ trang tương ứng. Dùng để mô phỏng bước trích xuất (offline) và so sánh RAG thường với GraphRAG.",
+  "concepts": [
+    { "name": "Dị thường dữ liệu", "description": "Lỗi thêm/sửa/xoá do dữ liệu trùng lặp", "page": 41, "quote": "ba loại dị thường: dị thường khi thêm, dị thường khi sửa và dị thường khi xóa" },
+    { "name": "Chuẩn hóa", "description": "Tách quan hệ để loại dị thường", "page": 47, "quote": "Khi tách một quan hệ để chuẩn hóa" },
+    { "name": "Phụ thuộc hàm", "description": "X xác định hàm Y", "page": 42, "quote": "Ta nói X xác định hàm Y" },
+    { "name": "Phụ thuộc hàm đầy đủ", "description": "Y không phụ thuộc tập con thực sự của X", "page": 42, "quote": "Phụ thuộc hàm đầy đủ là phụ thuộc mà Y không phụ thuộc vào bất kỳ tập con thực sự nào của X" },
+    { "name": "Phụ thuộc bắc cầu", "description": "X → Y, Y → Z thì X → Z", "page": 42, "quote": "Phụ thuộc bắc cầu xảy ra khi X → Y và Y → Z" },
+    { "name": "Dạng chuẩn 1 (1NF)", "description": "Thuộc tính chỉ chứa giá trị nguyên tố", "page": 43, "quote": "Một quan hệ ở dạng chuẩn 1 khi mọi thuộc tính chỉ chứa giá trị nguyên tố" },
+    { "name": "Khóa chính", "description": "Thuộc tính xác định duy nhất một dòng", "page": 44, "quote": "khi khóa chính gồm nhiều thuộc tính" },
+    { "name": "Dạng chuẩn 2 (2NF)", "description": "1NF và không phụ thuộc một phần khóa", "page": 44, "quote": "Một quan hệ ở dạng chuẩn 2 khi nó đạt 1NF" },
+    { "name": "Dạng chuẩn 3 (3NF)", "description": "2NF và không phụ thuộc bắc cầu", "page": 45, "quote": "Một quan hệ ở dạng chuẩn 3 khi nó đạt 2NF" },
+    { "name": "Siêu khóa", "description": "Tập thuộc tính xác định mọi thuộc tính", "page": 46, "quote": "X phải là siêu khóa" },
+    { "name": "Dạng chuẩn Boyce–Codd (BCNF)", "description": "Vế trái mọi phụ thuộc hàm không tầm thường là siêu khóa", "page": 46, "quote": "Một quan hệ ở dạng BCNF khi với mọi phụ thuộc hàm không tầm thường" },
+    { "name": "Phân rã bảo toàn thông tin", "description": "Nối lại ra đúng quan hệ ban đầu", "page": 47, "quote": "nối tự nhiên các quan hệ con phải cho lại đúng quan hệ ban đầu" },
+    { "name": "Chỉ mục (Index)", "description": "Cấu trúc giúp tìm dòng nhanh", "page": 52, "quote": "Chỉ mục là cấu trúc dữ liệu giúp tìm kiếm dòng nhanh hơn" },
+    { "name": "Chỉ mục B-tree", "description": "Hợp truy vấn phạm vi", "page": 52, "quote": "Chỉ mục B-tree phù hợp với truy vấn so sánh phạm vi" },
+    { "name": "Chỉ mục băm", "description": "Hợp truy vấn so sánh bằng", "page": 52, "quote": "chỉ mục băm phù hợp với truy vấn so sánh bằng" },
+    { "name": "LEFT JOIN", "description": "Giữ mọi dòng bảng trái", "page": 60, "quote": "LEFT JOIN trả về tất cả các dòng của bảng bên trái" },
+    { "name": "INNER JOIN", "description": "Chỉ giữ dòng khớp", "page": 60, "quote": "INNER JOIN chỉ giữ những dòng khớp ở cả hai bảng" }
+  ],
+  "relations": [
+    { "from": "Dạng chuẩn 1 (1NF)", "to": "Dạng chuẩn 2 (2NF)", "type": "CAN_BIET_TRUOC", "page": 44, "quote": "Một quan hệ ở dạng chuẩn 2 khi nó đạt 1NF" },
+    { "from": "Phụ thuộc hàm đầy đủ", "to": "Dạng chuẩn 2 (2NF)", "type": "CAN_BIET_TRUOC", "page": 44, "quote": "mọi thuộc tính không khóa đều phụ thuộc đầy đủ vào khóa chính" },
+    { "from": "Khóa chính", "to": "Dạng chuẩn 2 (2NF)", "type": "CAN_BIET_TRUOC", "page": 44, "quote": "Vi phạm 2NF chỉ có thể xảy ra khi khóa chính gồm nhiều thuộc tính" },
+    { "from": "Dạng chuẩn 2 (2NF)", "to": "Dạng chuẩn 3 (3NF)", "type": "CAN_BIET_TRUOC", "page": 45, "quote": "Một quan hệ ở dạng chuẩn 3 khi nó đạt 2NF" },
+    { "from": "Phụ thuộc bắc cầu", "to": "Dạng chuẩn 3 (3NF)", "type": "CAN_BIET_TRUOC", "page": 45, "quote": "không có thuộc tính không khóa nào phụ thuộc bắc cầu vào khóa chính" },
+    { "from": "Phụ thuộc hàm", "to": "Phụ thuộc bắc cầu", "type": "CAN_BIET_TRUOC", "page": 42, "quote": "Phụ thuộc bắc cầu xảy ra khi X → Y và Y → Z" },
+    { "from": "Phụ thuộc hàm", "to": "Phụ thuộc hàm đầy đủ", "type": "CAN_BIET_TRUOC", "page": 42, "quote": "Phụ thuộc hàm đầy đủ là phụ thuộc mà Y không phụ thuộc vào bất kỳ tập con thực sự nào của X" },
+    { "from": "Dạng chuẩn 3 (3NF)", "to": "Dạng chuẩn Boyce–Codd (BCNF)", "type": "CAN_BIET_TRUOC", "page": 46, "quote": "mọi quan hệ đạt BCNF đều đạt 3NF" },
+    { "from": "Siêu khóa", "to": "Dạng chuẩn Boyce–Codd (BCNF)", "type": "CAN_BIET_TRUOC", "page": 46, "quote": "X phải là siêu khóa" },
+    { "from": "Dạng chuẩn 2 (2NF)", "to": "Dạng chuẩn 3 (3NF)", "type": "LIEN_QUAN", "page": 45, "quote": "2NF loại bỏ phụ thuộc vào một phần khóa, còn 3NF loại bỏ phụ thuộc bắc cầu" },
+    { "from": "Phân rã bảo toàn thông tin", "to": "Chuẩn hóa", "type": "LIEN_QUAN", "page": 47, "quote": "Khi tách một quan hệ để chuẩn hóa, phép phân rã cần không mất thông tin" },
+    { "from": "Chỉ mục (Index)", "to": "Chỉ mục B-tree", "type": "CAN_BIET_TRUOC", "page": 52, "quote": "Chỉ mục là cấu trúc dữ liệu giúp tìm kiếm dòng nhanh hơn" },
+    { "from": "Chỉ mục B-tree", "to": "Chỉ mục băm", "type": "LIEN_QUAN", "page": 52, "quote": "Chỉ mục B-tree phù hợp với truy vấn so sánh phạm vi, còn chỉ mục băm phù hợp với truy vấn so sánh bằng" },
+    { "from": "LEFT JOIN", "to": "INNER JOIN", "type": "LIEN_QUAN", "page": 60, "quote": "Ngược lại, INNER JOIN chỉ giữ những dòng khớp ở cả hai bảng" }
+  ],
+  "fabricated": [
+    { "from": "Chỉ mục B-tree", "to": "Dạng chuẩn Boyce–Codd (BCNF)", "type": "CAN_BIET_TRUOC", "page": 52, "quote": "B-tree là điều kiện bắt buộc để đạt BCNF" }
+  ],
+  "questions": [
+    { "id": "q01", "query": "Vì sao bảng LOP(MaLop, MaKhoa, TenKhoa) không đạt 3NF?", "focus": "Dạng chuẩn 3 (3NF)", "prerequisites": ["Dạng chuẩn 2 (2NF)", "Phụ thuộc bắc cầu"], "pages": [45, 44, 42] },
+    { "id": "q02", "query": "Điều kiện để một bảng đạt 2NF là gì?", "focus": "Dạng chuẩn 2 (2NF)", "prerequisites": ["Dạng chuẩn 1 (1NF)", "Phụ thuộc hàm đầy đủ", "Khóa chính"], "pages": [44, 43, 42] },
+    { "id": "q03", "query": "BCNF khác 3NF thế nào?", "focus": "Dạng chuẩn Boyce–Codd (BCNF)", "prerequisites": ["Dạng chuẩn 3 (3NF)", "Siêu khóa"], "pages": [46, 45] },
+    { "id": "q04", "query": "Phụ thuộc bắc cầu là gì?", "focus": "Phụ thuộc bắc cầu", "prerequisites": ["Phụ thuộc hàm"], "pages": [42] },
+    { "id": "q05", "query": "TenSV chỉ phụ thuộc MaSV thì DANGKY vi phạm dạng chuẩn nào?", "focus": "Dạng chuẩn 2 (2NF)", "prerequisites": ["Phụ thuộc hàm đầy đủ", "Dạng chuẩn 1 (1NF)", "Khóa chính"], "pages": [44, 43, 42] },
+    { "id": "q06", "query": "Khi nào nên dùng chỉ mục B-tree?", "focus": "Chỉ mục B-tree", "prerequisites": ["Chỉ mục (Index)"], "pages": [52] },
+    { "id": "q07", "query": "Muốn hiểu 3NF thì cần ôn gì trước?", "focus": "Dạng chuẩn 3 (3NF)", "prerequisites": ["Dạng chuẩn 2 (2NF)", "Phụ thuộc bắc cầu"], "pages": [45, 44, 42] },
+    { "id": "q08", "query": "Siêu khóa liên quan gì tới BCNF?", "focus": "Dạng chuẩn Boyce–Codd (BCNF)", "prerequisites": ["Siêu khóa", "Dạng chuẩn 3 (3NF)"], "pages": [46, 45] },
+    { "id": "q09", "query": "Phụ thuộc hàm đầy đủ là gì?", "focus": "Phụ thuộc hàm đầy đủ", "prerequisites": ["Phụ thuộc hàm"], "pages": [42] },
+    { "id": "q10", "query": "Vì sao cột SoDienThoai chứa nhiều số trong một ô lại làm bảng không đạt 2NF?", "focus": "Dạng chuẩn 2 (2NF)", "prerequisites": ["Dạng chuẩn 1 (1NF)", "Phụ thuộc hàm đầy đủ", "Khóa chính"], "pages": [44, 43, 42] }
+  ]
+}

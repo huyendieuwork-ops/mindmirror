@@ -96,6 +96,8 @@ export interface TurnPromptInput {
   recentTurns?: number;
   /** Phiên có gắn tài liệu nhưng lượt này không truy xuất được đoạn nào phù hợp. */
   documentsAttachedButNoMatch?: boolean;
+  /** Đợt 3: khối <concept_graph> (quan hệ khái niệm có căn cứ) khi người học vướng. */
+  graphBlock?: string;
 }
 
 export function turnPrompt(i: TurnPromptInput): string {
@@ -122,6 +124,7 @@ export function turnPrompt(i: TurnPromptInput): string {
   if (s.rubric.length) lines.push(rubricBlock(s.rubric, new Map((i.retrieved ?? []).map((r, idx) => [r.chunk.id, `S${idx + 1}`]))));
   if (i.retrieved?.length) lines.push(sourcesBlock(i.retrieved));
   else if (i.documentsAttachedButNoMatch) lines.push(`<sources note="đã tìm trong tài liệu của người học nhưng KHÔNG thấy đoạn liên quan — không được trích dẫn tài liệu ở lượt này"></sources>`);
+  if (i.graphBlock) lines.push(i.graphBlock);
 
   lines.push(`<history>`);
   for (const m of recent) lines.push(`${m.role === "user" ? "Người học" : "MindMirror"}: ${escapeTags(m.text)}`);

@@ -83,9 +83,10 @@ Lượt 1 và lượt 3 được kiểm thử tự động (`test/agent-mvp.test
 | `get_knowledge_gaps` | model, MCP | ✔ | chỉ phiên của `userId` |
 | `save_session_summary` | **chỉ workflow** khi kết thúc | ✘ | phiên phải thuộc `userId`; model/MCP gọi → `forbidden` |
 | `search_trusted_sources` (Đợt 2) | **chỉ workflow** Khám phá, tối đa 1 lần/lượt | ✔ | chỉ trang trong danh sách nguồn chính thống; không phơi bày qua MCP; hạn mức 20 lượt/người/ngày |
+| `explore_concept_graph` (Đợt 3) | workflow Khám phá (vướng ≥ 2 lượt cùng một ý), MCP | ✔ | mọi câu Cypher lọc `userId`; chỉ tài liệu của phiên hoặc tài liệu sở hữu đã kiểm (id lạ → `forbidden`); model không tự gọi |
 
 - **Native tool calling** (trong Worker): engine khai báo một *tập con* công cụ cho Gemini ở lượt có ích — có tài liệu trong thư viện và (phiên chưa gắn tài liệu hoặc người học nhắc tới tài liệu), hoặc người học nhắc tới buổi trước. Model **tự quyết** có gọi hay không. Không mở công cụ khi không cần → không tốn token/lời gọi thừa.
-- **MCP server** (`POST /mcp`, JSON-RPC 2.0 Streamable HTTP): phơi bày **cùng registry** cho client bên ngoài, chỉ 3 công cụ chỉ-đọc; xác thực bằng Bearer JWT của Supabase; giới hạn 30 lời gọi/phút; mỗi request ghi trace `mcp.*`. Không có logic tìm kiếm thứ hai.
+- **MCP server** (`POST /mcp`, JSON-RPC 2.0 Streamable HTTP): phơi bày **cùng registry** cho client bên ngoài, chỉ 4 công cụ chỉ-đọc (thêm `explore_concept_graph` từ Đợt 3); xác thực bằng Bearer JWT của Supabase; giới hạn 30 lời gọi/phút; mỗi request ghi trace `mcp.*`. Không có logic tìm kiếm thứ hai.
 - **MCP client** (có sẵn): kết nối Drive/Notion để **nhập** học liệu vào thư viện (người dùng chọn từng file); tài liệu nhập đi đúng đường RAG.
 
 **Đường đi RAG**: trình duyệt trích chữ PDF/PPTX → `POST /api/documents` → cắt đoạn theo trang (giữ tiêu đề, đánh dấu đoạn nghi chỉ thị) → embedding Gemini (nếu có key) → lưu `chunks` (pgvector + full-text) → truy vấn lai BM25 + vector gộp RRF, **luôn lọc theo user_id** → đưa ≤ 4 đoạn (≤ 1600 ký tự/đoạn) vào prompt dưới nhãn `S1..` → backend chỉ giữ trích dẫn có **nguyên văn** trong đúng đoạn → hiển thị tên tài liệu + trang. Không tìm thấy đoạn phù hợp → prompt ghi rõ "không được trích dẫn tài liệu ở lượt này". Embedding câu truy vấn được cache (LRU 200 mục).
@@ -102,6 +103,56 @@ Lượt 1 và lượt 3 được kiểm thử tự động (`test/agent-mvp.test
 - **Rà soát sau merge (11/11):** (1) model hay quên `search_query` → truy vấn lấy từ khoá trong câu hỏi (`keywordQuery`, bỏ từ hỏi/hư từ), không ghép chủ đề phiên; (2) Wikipedia tìm theo mọi từ nên câu dài hay rỗng → tự thử lại bằng từ khoá ngắn; (3) CI dùng secret `GEMINI_API_KEY_CI` nếu có (tránh tiêu hết hạn mức của khoá đang chạy web); (4) eval judgment báo rõ khi trượt do lỗi 429 chứ không phải chất lượng.
 - **Giao diện & trace:** khung Chi tiết phiên → tab Nguồn tách "Từ tài liệu của bạn" và "Nguồn web" (tên trang, tiêu đề, link mở tab mới); `[W1]` có viền nét đứt, khác `[1]`. Chế độ kỹ thuật → "Agent đã làm gì" hiện bước "Tìm nguồn chính thống" và danh sách trang đã dùng.
 
+### Đồ thị khái niệm — GraphRAG + Neo4j + LangChain (Đợt 3)
+
+**Mô hình đồ thị** (Neo4j Aura Free; tên trong Cypher viết ASCII không dấu để tránh lỗi mã hoá, giao diện hiện tên tiếng Việt):
+
+| Trong code | Ý nghĩa | Thuộc tính chính |
+|---|---|---|
+| `(:KhaiNiem)` — Khái niệm | một khái niệm rút từ tài liệu | `userId`, `key` (tên chuẩn hoá), `name`, `description`, `aliases` (viết tắt, vd "3NF") |
+| `(:TaiLieu)` — Tài liệu | tài liệu trong thư viện | `userId`, `id`, `title` |
+| `(:Trang)` — Trang | một trang của tài liệu | `userId`, `key` = `docId:page`, `page` |
+| `-[:CAN_BIET_TRUOC]->` — CẦN_BIẾT_TRƯỚC | A cần nắm trước khi học B | `quote`, `chunkId`, `documentId`, `page` |
+| `-[:LIEN_QUAN]->` — LIÊN_QUAN | A và B liên quan (không chiều) | như trên |
+| `(:KhaiNiem)-[:XUAT_HIEN_O]->(:Trang)` — XUẤT_HIỆN_Ở | khái niệm xuất hiện ở trang | `quote`, `chunkId` |
+| `(:Trang)-[:THUOC]->(:TaiLieu)` | trang thuộc tài liệu | — |
+
+Mọi nút đều mang `userId`; mọi câu đọc/ghi đều có điều kiện `userId: $userId` (lấy từ phiên đăng nhập, không nhận từ client). Kiểu quan hệ chỉ lấy từ danh sách cố định trong code, không ghép chuỗi từ dữ liệu. Xoá tài liệu → xoá nút Trang/quan hệ có căn cứ ở tài liệu đó; "Xoá toàn bộ dữ liệu" → xoá cả đồ thị của tài khoản. Kết nối qua **Neo4j Query API v2** (HTTPS, `fetch` của Worker — không cần driver Bolt); secret `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` (`NEO4J_DATABASE` tuỳ chọn). Thiếu secret → `/api/graph/status` báo `configured:false`, giao diện hiện "Bản đồ khái niệm chưa bật", các tính năng khác chạy như cũ.
+
+**Dựng đồ thị (chỉ khi người học bấm "Tạo bản đồ khái niệm")** — `POST /api/graph/build`, `api/src/graph/build.ts`:
+1. Kiểm quyền: mọi `document_ids` (1–5) phải thuộc tài khoản → không thì 403 `forbidden`.
+2. Kiểm hạn mức: `GRAPH_BUILDS_PER_DAY` = 10 lần/người/ngày (bảng `graph_build_log`) → 429.
+3. Lấy các trang **chưa đọc** (Neo4j nhớ trang đã trích), tối đa `GRAPH_MAX_PAGES_PER_BUILD` = 6 trang, gộp thành lô ≤ 4.500 ký tự, tối đa `GRAPH_MAX_CALLS_PER_BUILD` = 3 lần gọi Gemini mỗi lần bấm. Còn trang → nút đổi thành "Đọc tiếp (còn ~N trang)". Cách này giữ hạn mức 500 lượt Gemini/ngày: một tài liệu 30 trang tốn ~15 lượt, chia 5 lần bấm.
+4. **LangChain** (`@langchain/core` 1.3.0, `api/src/graph/langchain.ts`): `ChatPromptTemplate` → `RouterChatModel` (bọc ModelRouter sẵn có: Gemini qua GeoProxy, retry/backoff, trace) → `JsonOutputParser` → kiểm schema zod. Chạy `.batch(..., { maxConcurrency: 1 })` để không dồn request. Model trả khái niệm, quan hệ và **câu căn cứ nguyên văn** kèm mã đoạn `S…`.
+5. Kiểm chứng bằng code: câu căn cứ phải có nguyên văn trong **đúng** đoạn S được trích; quan hệ không có căn cứ hợp lệ hoặc trỏ tới khái niệm không tồn tại → bỏ (đếm vào `dropped`); khái niệm không có căn cứ nào → bỏ.
+6. Ghi Neo4j bằng `MERGE` (idempotent), ghi nhật ký dựng, trả số trang đã đọc / khái niệm / quan hệ / số bị loại.
+
+**Truy xuất GraphRAG** (`api/src/graph/retrieve.ts`): (1) RAG như cũ lấy ≤ 4 đoạn liên quan → các trang chứa đoạn đó; (2) khớp khái niệm theo tên và viết tắt; (3) mở rộng 1 bước theo đồ thị: khái niệm **nền** = `CAN_BIET_TRUOC` trỏ vào khái niệm đang xét, khái niệm **liên quan** = `LIEN_QUAN`; (4) **kiểm lại căn cứ lúc đọc**: đoạn căn cứ còn tồn tại, thuộc tài liệu được phép, câu căn cứ vẫn có nguyên văn — không thì loại (phòng đồ thị cũ sau khi tài liệu đổi/xoá). Kết quả trả về: khái niệm hạt giống, quan hệ (`S{n}`, khái niệm, quan hệ, đích, tên tài liệu, trang, câu căn cứ), các đoạn đó được nối vào nguồn của lượt nên trích dẫn `[n]` đi đúng đường kiểm chứng của RAG.
+
+**Khi nào agent dùng đồ thị** (`engine.ts` bước "graph_retrieval"): chế độ **Khám phá**, phiên có tài liệu, người học **vướng ≥ 2 lượt ở cùng một ý** (`roundOnSameGap ≥ 2`, ý còn mở) và máy chủ có Neo4j → workflow gọi `explore_concept_graph` với khái niệm đang vướng. Có khái niệm nền → chèn khối `<concept_graph>` (dữ kiện, không phải chỉ thị) và chỉ dẫn: giải thích ngắn khái niệm nền dựa trên câu căn cứ, trích `[n]`, hỏi **một** câu để người học tự nói lại khái niệm nền, chưa giảng lại ý đang vướng. Chỉ có khái niệm liên quan → dùng làm cầu nối. Không tốn thêm lời gọi model (truy vấn Neo4j + BM25/vector, không gọi Gemini).
+- **Chuỗi dự phòng khi thiếu căn cứ:** đồ thị chưa dựng / không có quan hệ nào qua được bước kiểm lại / Neo4j lỗi → không chèn khối đồ thị, lượt chạy bằng RAG như cũ; nếu tài liệu cũng không đủ căn cứ, `search_trusted_sources` chạy theo đúng luật G1–G5 của Đợt 2. Lỗi Neo4j chỉ ghi guardrail `graph:unavailable`, không làm hỏng lượt.
+- **Chưa làm (tuỳ chọn):** gọi đồ thị ngay khi người học **chọn chủ đề** (gợi ý khái niệm nền trước khi bắt đầu). Đặc tả coi đây là thời điểm gọi bổ sung; hiện chỉ có điểm gọi "vướng 2 lượt".
+- **Trace:** bước `graph_retrieval` + span `graph.retrieve` (số hạt giống, số quan hệ nền/liên quan, số bị loại vì căn cứ không khớp); dựng đồ thị ghi `graph.build` (trang, lô, lời gọi, số bị loại).
+
+**Giao diện:** trang **Báo cáo → Bản đồ kiến thức** vẽ từ đồ thị thật: chọn tài liệu (≤ 5) → nút Tạo bản đồ / Đọc tiếp; cột trái → phải theo `CẦN_BIẾT_TRƯỚC` (khái niệm nền bên trái), nét đứt = `LIÊN_QUAN`; nút tô vàng "cần ôn" / xanh "đã vững" theo kết quả các phiên học. Bấm một khái niệm → khung bên phải hiện khái niệm nền, "là nền cho", liên quan, mỗi dòng kèm câu căn cứ + tài liệu + trang, và link "Khám phá …". Thẻ cũ đổi tên thành "Khái niệm theo kết quả học".
+
+**MCP:** `explore_concept_graph` là công cụ chỉ-đọc thứ 4 của MCP server (tham số `concept`, `query?`, `document_ids?`), cùng kiểm quyền theo JWT. Không có công cụ ghi/dựng đồ thị qua MCP.
+
+**So sánh RAG thường và GraphRAG** — `npm run eval:graph` (offline, deterministic, 0 lời gọi API). Tài liệu: `csdl-chuan-hoa.json` (Giáo trình CSDL chương 4). Đồ thị dựng bằng **đúng pipeline sản phẩm** (lô, kiểm chứng căn cứ, ghi đồ thị), riêng bước LLM trích xuất thay bằng đồ thị gán tay `eval/fixtures/csdl-graph.json` (17 khái niệm, 14 quan hệ + 1 quan hệ bịa để kiểm bước loại) — để số liệu đo **phần truy xuất**, không lẫn chất lượng trích xuất của Gemini. 10 câu hỏi, mỗi câu có trang chuẩn và khái niệm nền chuẩn. Chạy 11/11/2026:
+
+| Cách | Page recall | Prerequisite recall | Số đoạn / câu |
+|---|---|---|---|
+| RAG thường (top-4) | 80% | 75% | 3,6 |
+| GraphRAG — tự tìm hạt giống từ câu hỏi | 97% | 80% | 4,1 |
+| GraphRAG — biết khái niệm đang vướng (cách agent gọi thật) | **100%** | **100%** | 4,2 |
+
+- *Page recall* = tỉ lệ trang chuẩn có trong ngữ cảnh đưa model. *Prerequisite recall* = tỉ lệ khái niệm nền chuẩn được chỉ ra (RAG được tính rộng tay: trang định nghĩa khái niệm nền nằm trong top-4 là tính).
+- Đổi lại GraphRAG thêm ~0,5 đoạn/câu (≈ +600 ký tự prompt).
+- Lợi rõ nhất ở câu kiểu "muốn hiểu 3NF cần ôn gì trước?" (q07: RAG 33%/0% → GraphRAG 100%/100%). Ở chế độ tự tìm hạt giống, q04 và q10 chọn sai khái niệm đích (0% khái niệm nền) — đó là lý do agent chỉ gọi đồ thị khi **đã biết** ý đang vướng.
+- Giới hạn của số liệu: một tài liệu, 10 câu, đồ thị gán tay; chưa đo trên đồ thị do Gemini trích thật (cần Neo4j + hạn mức).
+
+**Nghiệm thu (11 ca `gr-01…11` trong `npm run eval:agent`, offline 11/11):** dựng chỉ khi bấm + giới hạn trang/lời gọi; loại quan hệ có câu căn cứ bịa; tài khoản khác dựng từ tài liệu không phải của mình → `forbidden`; quá hạn mức ngày → từ chối, 0 lời gọi model; hỏi bằng viết tắt "3NF" → nền 2NF + phụ thuộc bắc cầu, trang 45; câu không nêu tên → RAG trước rồi mở rộng; tài khoản khác đọc đồ thị (trực tiếp + MCP) → không thấy gì; căn cứ không còn khớp → loại lúc đọc; Khám phá vướng 2 lượt → gọi đồ thị, hỏi về khái niệm nền, trích dẫn hợp lệ; đồ thị trống → chạy bằng RAG; MCP liệt kê công cụ chỉ-đọc. Ngoài ra 16 unit/integration test trong `test/graph.test.ts` (gồm Neo4jGraphStore với `fetch` giả: câu Cypher luôn có `userId`, đổi `neo4j+s://` → HTTPS, lỗi Neo4j).
+
 ## 5. Guardrails (đều là code, có test)
 
 | Lớp | Cơ chế | Test |
@@ -110,6 +161,7 @@ Lượt 1 và lượt 3 được kiểm thử tự động (`test/agent-mvp.test
 | Đánh giá | Quote không phải lời người học → loại; có tài liệu: chê sai phải kèm trích dẫn, khen đúng phải gắn tiêu chí/nguồn; không tài liệu + model tự báo `low` → không kết luận "sai"; không khen "đã hiểu rõ" khi lượt này chưa có bằng chứng; cấm % mức hiểu/chẩn đoán năng lực | `ga-01…06` |
 | Đầu ra | Zod schema + 1 lần sửa; action phải thuộc tập policy cho phép; trích dẫn phải có thật; chặn rò rỉ system prompt; che chuỗi giống khoá API/JWT; đo trùng lặp với đáp án mẫu (lộ đáp án); phát hiện câu hỏi lặp; fallback an toàn | `rc-01…05`, "output guard…" |
 | Bảo mật | Mọi tool kiểm quyền theo `userId`; validate tham số; model không gọi được tool ghi; MCP không phơi bày tool ghi; tài liệu bọc `<source>` + gắn cảnh báo đoạn nghi chỉ thị | `gt-01…05`, test MCP "người dùng khác…" |
+| Đồ thị (Đợt 3) | Đọc/ghi luôn lọc `userId` từ phiên đăng nhập; kiểu quan hệ từ danh sách cố định; căn cứ kiểm khi dựng **và** khi đọc; dựng chỉ khi bấm, ≤ 6 trang / ≤ 3 lời gọi / 10 lần/ngày; MCP chỉ-đọc | `gr-01…11`, `test/graph.test.ts` |
 | Nguồn web (Đợt 2) | Kiểm tra link L1–L7; trích dẫn web phải có nguyên văn trong trang đã tải; đoạn web bọc `<web_source>`, đoạn nghi chỉ thị gắn cờ; xoá câu có trích dẫn bịa; tối đa 1 lần tìm/lượt; hạn mức ngày | `wl-01…03`, `ws-01…08`, `test/web.test.ts` |
 
 ### Quy tắc chấm điểm (theo tài liệu "Rule chấm điểm MindMirror")
@@ -128,8 +180,9 @@ Lượt 1 và lượt 3 được kiểm thử tự động (`test/agent-mvp.test
 
 ```bash
 cd api
-npm test                                  # 144 unit/integration test
-npm run eval:agent                        # 52 ca offline (có 11 ca nguồn web), deterministic, 0 API call
+npm test                                  # 164 unit/integration test
+npm run eval:agent                        # 63 ca offline (11 ca nguồn web, 11 ca đồ thị), deterministic, 0 API call
+npm run eval:graph                        # so sánh RAG thường vs GraphRAG trên 10 câu (offline)
 npm run eval:agent -- --live --max-calls 24   # +12 ca với Gemini thật (cần GEMINI_API_KEY; ts-03/ts-04 tìm web thật), giãn cách 4.2s
 npm run eval:retrieval                    # 14 câu truy xuất (hit@k, MRR)
 npm run eval -- --suite judgment --runs 3 # 14 ca chấm × 3 lần (κ, over-claim, nhất quán) — cần key
@@ -144,6 +197,7 @@ Báo cáo: `api/eval/reports/agent-eval-<thời gian>.md|json`. CI của mỗi P
 | rag (citation 5, retrieval 5) | 10 | 10 | 10 |
 | workflow (kịch bản 8) | 8 | 8 | 8 |
 | web — Đợt 2 (link 3, kịch bản 8; chạy 11/11/2026, nhánh `dot2-trusted-sources`) | 11 | 11 | 11 |
+| graph — Đợt 3 (dựng 4, truy xuất 4, workflow 2, MCP 1; chạy 11/11/2026, nhánh `dot3-graphrag`) | 11 | 11 | 11 |
 
 **Kết quả live thật — CI của PR #3 (31/10/2026 UTC, `gemini-3.5-flash-lite`, 11 lời gọi, `--max-calls 24`)** — chạy 2 lần (run #5, #6), kết quả giống nhau:
 
@@ -191,6 +245,7 @@ Hoặc mở **MCP Inspector** (`npx @modelcontextprotocol/inspector`), chọn St
 
 ## 11. Giới hạn đã biết
 
+- Đồ thị khái niệm: chất lượng phụ thuộc Gemini trích xuất (model nhẹ có thể bỏ sót quan hệ; quan hệ sai nhưng có câu căn cứ thật vẫn lọt qua bước kiểm). Mở rộng 1 bước, chưa đi chuỗi nền nhiều tầng. Khớp khái niệm theo tên/viết tắt, chưa khớp ngữ nghĩa (embedding). Chưa có điểm gọi "khi chọn chủ đề". Aura Free tự tạm dừng sau 3 ngày không dùng (cần bấm Resume trên console) — khi đó `/api/graph/status` báo `connected:false` và các tính năng khác vẫn chạy.
 - Nguồn web: điều kiện tìm web dựa vào việc model đặt `needs_source=true` (code không tự biết tài liệu "thiếu căn cứ"); model quên đặt thì câu trả lời mang nhãn kiến thức chung. Wikipedia tìm theo tiêu đề nên phụ thuộc từ khoá model đề xuất; Tavily (khi có khoá) tìm rộng hơn trong toàn danh sách. Môn học hiện mặc định "csdl" (danh sách theo môn mới có bản CSDL).
 - Tool selection: từ đợt 1, khi người học nhắc tài liệu/slide của họ (regex `DOC_REF`) trong phiên không gắn tài liệu, workflow tự gọi `search_learning_materials` (trước đó ts-01 trượt vì model hay hỏi lại thay vì tìm). Phát hiện "nhắc tài liệu" dựa trên từ khoá, nên cách nói khác thường có thể không kích hoạt.
 - Judgment eval: độ nhất quán qua 3 lần chạy 71% (< 80%) — model dao động ở ca "đúng một phần"; cần thêm ca gán nhãn và/hoặc temperature thấp hơn cho bước chấm.

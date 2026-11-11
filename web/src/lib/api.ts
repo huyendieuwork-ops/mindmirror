@@ -52,6 +52,14 @@ export interface TraceRecord {
   };
 }
 
+// ---- Đợt 3: bản đồ khái niệm (GraphRAG) ----
+export type GraphRelType = "CAN_BIET_TRUOC" | "LIEN_QUAN";
+export interface GraphConcept { key: string; name: string; description: string; aliases: string[]; pages: (number | null)[]; documentIds: string[] }
+export interface GraphRel { from: string; to: string; fromName: string; toName: string; type: GraphRelType; evidence: { documentId: string; documentTitle: string; page: number | null; chunkId: string; quote: string } }
+export interface GraphViewData { concepts: GraphConcept[]; relations: GraphRel[]; documents: { id: string; title: string; extractedPages: number }[] }
+export interface GraphStatus { configured: boolean; connected: boolean; kind: string | null; error?: string; limits: { pagesPerBuild: number; buildsPerDay: number } }
+export interface GraphBuildResult { processedPages: number; remainingPages: number; totalPages: number; concepts: number; relations: number; mentions: number; dropped: { relations: number; mentions: number; batches: number }; llmCalls: number; done: boolean }
+
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, readonly body: any) { super(code); }
 }
@@ -75,6 +83,10 @@ export function explain(e: unknown): string {
     connector_encryption_not_configured: "Máy chủ chưa đặt khoá mã hoá token (CONNECTOR_ENC_KEY).",
     folder_limit: "Đã đạt tối đa 50 thư mục.",
     folder_not_found: "Thư mục không còn tồn tại. Tải lại trang rồi thử lại.",
+    graph_not_configured: "Máy chủ chưa kết nối Neo4j nên chưa tạo được bản đồ khái niệm.",
+    graph_daily_limit: "Hôm nay bạn đã tạo bản đồ đủ số lần cho phép. Mai bạn bấm tiếp nhé.",
+    graph_forbidden: "Có tài liệu không thuộc thư viện của bạn.",
+    graph_graph_unavailable: "Chưa kết nối được cơ sở dữ liệu đồ thị. Thử lại sau ít phút.",
   };
   return m[e.code] ?? `Lỗi ${e.status}: ${e.code}`;
 }
@@ -121,6 +133,9 @@ export const api = {
   settings: () => req<Settings>("GET", "/api/me/settings"),
   saveSettings: (s: Partial<Settings>) => req<Settings>("PATCH", "/api/me/settings", s),
   deleteData: (scope: "sessions" | "all") => req("DELETE", "/api/me/data", { scope, confirm: "XOA" }),
+  graphStatus: () => req<GraphStatus>("GET", "/api/graph/status"),
+  buildGraph: (documentIds: string[]) => req<GraphBuildResult>("POST", "/api/graph/build", { document_ids: documentIds }),
+  graph: (documentIds: string[]) => req<GraphViewData>("GET", `/api/graph?document_ids=${documentIds.join(",")}`),
 };
 
 export const newTurnId = () => (crypto.randomUUID?.() ?? `t-${Date.now()}-${Math.random().toString(36).slice(2)}`);
