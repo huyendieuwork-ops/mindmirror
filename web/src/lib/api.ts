@@ -35,7 +35,7 @@ export interface TurnResult {
   traceId: string | null; modelInfo: { provider: string; model: string } | null;
 }
 export interface LibraryDoc { id: string; title: string; kind: string; pageCount: number; chunkCount: number; embedded: boolean; warnings: string[]; createdAt: string; origin: unknown; folderId?: string | null }
-export interface Folder { id: string; name: string; color: string; createdAt: string }
+export interface Folder { id: string; name: string; color: string; goal?: string | null; createdAt: string }
 export interface Connector { id: string; name: string; preset: string; host: string; hasToken: boolean; tools: { search: string; fetch: string } }
 export interface Settings { aiStyle: "friendly" | "concise" | "academic"; supportPreference: "socratic_first" | "direct" | "flexible"; challengeLevel: "gentle" | "balanced" | "deep"; selfAssessment: boolean }
 export interface AppConfig { env: string; devAuth: boolean; model: string; embeddings: boolean; tracing: string[]; limits: { sessionsPerDay: number; turnsPerSession: number; inputChars: number } }
@@ -83,6 +83,7 @@ export function explain(e: unknown): string {
     connector_encryption_not_configured: "Máy chủ chưa đặt khoá mã hoá token (CONNECTOR_ENC_KEY).",
     folder_limit: "Đã đạt tối đa 50 thư mục.",
     folder_not_found: "Thư mục không còn tồn tại. Tải lại trang rồi thử lại.",
+    goal_rejected: "Mục tiêu học có nội dung giống chỉ thị cho AI hoặc yêu cầu thông tin hệ thống. Hãy viết mục tiêu học tập của bạn, ví dụ: “Ôn thi cuối kỳ chương 4–6”.",
     graph_not_configured: "Máy chủ chưa kết nối Neo4j nên chưa tạo được bản đồ khái niệm.",
     graph_daily_limit: "Hôm nay bạn đã tạo bản đồ đủ số lần cho phép. Mai bạn bấm tiếp nhé.",
     graph_forbidden: "Có tài liệu không thuộc thư viện của bạn.",
@@ -109,7 +110,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export const api = {
   config: () => req<AppConfig>("GET", "/api/config"),
-  createSession: (b: { mode: Mode; topic: string; goal?: string; self_confidence?: string | null; document_ids?: string[] }) => req<SessionView>("POST", "/api/sessions", b),
+  createSession: (b: { mode: Mode; topic: string; goal?: string; self_confidence?: string | null; document_ids?: string[]; folder_id?: string }) => req<SessionView>("POST", "/api/sessions", b),
   listSessions: () => req<{ items: { id: string; mode: Mode; topic: string; phase: string; status: string; updatedAt: string }[] }>("GET", "/api/sessions"),
   getSession: (id: string) => req<SessionView>("GET", `/api/sessions/${id}`),
   turn: (id: string, b: { text: string; intent?: Intent | null; client_turn_id: string }) => req<TurnResult>("POST", `/api/sessions/${id}/turn`, b),
@@ -122,8 +123,8 @@ export const api = {
   deleteDocument: (id: string) => req("DELETE", `/api/documents/${id}`),
   moveDocument: (id: string, folderId: string | null) => req<{ id: string; folderId: string | null }>("PATCH", `/api/documents/${id}`, { folder_id: folderId }),
   folders: () => req<{ items: Folder[] }>("GET", "/api/folders"),
-  createFolder: (b: { name: string; color?: string }) => req<Folder>("POST", "/api/folders", b),
-  updateFolder: (id: string, b: { name?: string; color?: string }) => req<Folder>("PATCH", `/api/folders/${id}`, b),
+  createFolder: (b: { name: string; color?: string; goal?: string | null }) => req<Folder>("POST", "/api/folders", b),
+  updateFolder: (id: string, b: { name?: string; color?: string; goal?: string | null }) => req<Folder>("PATCH", `/api/folders/${id}`, b),
   deleteFolder: (id: string) => req("DELETE", `/api/folders/${id}`),
   connectors: () => req<{ items: Connector[] }>("GET", "/api/connectors"),
   addConnector: (b: { name: string; url: string; preset: string; token?: string }) => req<Connector>("POST", "/api/connectors", b),
