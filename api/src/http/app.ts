@@ -84,6 +84,14 @@ const SettingsBody = z.object({
 
 export function createApp(over: AppOverrides = {}) {
   const app = new Hono<{ Bindings: Env; Variables: Vars }>();
+  // Giá trị ném ra không phải Error (vd PostgrestError dạng object) lọt qua onError của Hono → Worker sập, client chỉ thấy "Lỗi 500".
+  // Đổi thành Error để onError trả JSON {error:"internal_error"}.
+  app.use("*", async (_c, next) => {
+    try { await next(); } catch (e) {
+      if (e instanceof Error) throw e;
+      throw new Error((e as { message?: string } | null)?.message ?? String(e));
+    }
+  });
 
   // ALLOWED_ORIGIN có thể là danh sách phân tách dấu phẩy (vd domain Pages + localhost)
   app.use("*", async (c, next) => {
