@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, explain, type Mode, type Settings } from "../lib/api";
+import { api, explain, type LearnerLevel, type Mode, type Settings } from "../lib/api";
+import { LEVELS } from "../lib/labels";
 import { invalidate, MODE_PAGE, sessionPath, useLearningData } from "../lib/data";
 import { Logo } from "../components/Layout";
 import { Icon, PageHeader, SelectBox, timeAgo } from "../components/ui";
@@ -22,6 +23,7 @@ export default function Learn({ mode }: { mode: Mode }) {
   const [topic, setTopic] = useState(params.get("topic") ?? "");
   const [goal, setGoal] = useState("");
   const [conf, setConf] = useState<string | null>(null);
+  const [level, setLevel] = useState<LearnerLevel | "free">("beginner");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +44,7 @@ export default function Learn({ mode }: { mode: Mode }) {
     setStarting(true); setError(null);
     try {
       const folderId = source !== "none" && source !== "custom" ? source : undefined;
-      const s = await api.createSession({ mode, topic: t.trim(), goal: goal.trim() || undefined, self_confidence: conf, document_ids: documentIds, folder_id: folderId });
+      const s = await api.createSession({ mode, topic: t.trim(), goal: goal.trim() || undefined, self_confidence: conf, document_ids: documentIds, folder_id: folderId, level: mode === "explore" && level !== "free" ? level : null });
       invalidate();
       nav(sessionPath({ id: s.id, mode }));
     } catch (e) { setError(explain(e)); setStarting(false); }
@@ -67,7 +69,7 @@ export default function Learn({ mode }: { mode: Mode }) {
           <div className="mx-auto max-w-2xl text-center">
             <Logo size={56} className="mx-auto" />
             <h2 className="mt-4 text-xl font-bold text-ink">{mode === "reunderstand" ? "Bạn muốn kiểm tra chủ đề nào?" : "Bạn đang tò mò điều gì?"}</h2>
-            <p className="mt-1 text-sm text-muted">{mode === "reunderstand" ? "Nêu chủ đề, rồi giải thích theo cách bạn hiểu. MindMirror sẽ hỏi lại và chỉ ra chỗ còn thiếu." : "Đặt câu hỏi, MindMirror sẽ dẫn bạn tự tìm ra câu trả lời qua từng gợi ý."}</p>
+            <p className="mt-1 text-sm text-muted">{mode === "reunderstand" ? "Nêu chủ đề, rồi giải thích theo cách bạn hiểu. MindMirror sẽ hỏi lại và chỉ ra chỗ còn thiếu." : "Chọn trình độ, MindMirror lập dàn ý và giải thích từng phần kèm ví dụ; cuối mỗi phần có câu kiểm tra nhanh."}</p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               {EXAMPLES[mode].map((e) => <button key={e} onClick={() => setTopic(e)} className="chip">{e}</button>)}
             </div>
@@ -95,6 +97,12 @@ export default function Learn({ mode }: { mode: Mode }) {
           )}
 
           <div className="mx-auto mt-6 max-w-3xl space-y-3">
+            {mode === "explore" && (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted">Trình độ:</span>
+                {LEVELS.map((l) => <button key={l.value} onClick={() => setLevel(l.value)} aria-pressed={level === l.value} title={l.hint} className={`chip ${level === l.value ? "!border-mirror !bg-mist text-mirror" : ""}`}>{l.label}</button>)}
+              </div>
+            )}
             {mode === "reunderstand" && settings?.selfAssessment !== false && (
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-muted">Bạn thấy mình đang ở đâu?</span>
