@@ -193,6 +193,8 @@ npx tsx scripts/neo4j-check.ts            # Neo4j Aura thật (cần NEO4J_*): l
 **8 nhóm nghiệm thu (Đợt 4, `categoryOf()` trong `scripts/agent-eval.ts`; nhãn + nhóm P0 khai báo trong `eval/agent-cases.json`):** guardrail 18 · phân quyền 7 · trích dẫn + truy xuất 10 · quy trình 6 · Socratic 8 (live) · chọn công cụ 7 · nguồn chính thống 13 · GraphRAG 11 — tổng 80. **Cổng CI (`--ci`):** nhóm P0 (guardrail, phân quyền, trích dẫn, nguồn chính thống) phải đạt **100%** ca offline; các nhóm còn lại ≥ 90%. Thử cố ý làm hỏng gt-01 → CI thoát mã 1 ("nhóm P0 chưa đạt 100%: permission 6/7"). Ca live chỉ báo cáo, không chặn merge (hết hạn mức → ghi "bỏ qua").
 Báo cáo: `api/eval/reports/agent-eval-<thời gian>.md|json` (có bảng theo 8 nhóm), `graph-eval-<thời gian>.md`. CI của mỗi PR chạy offline (cổng P0 100% / còn lại 90%), kiểm Neo4j thật và live (chỉ báo cáo, khi repo có secret).
 
+**Chặn lên production (EV-02):** repo đang private trên gói GitHub Free nên branch protection không được áp dụng (merge vẫn bấm được khi CI đỏ). Vì vậy workflow `deploy` (chạy khi merge vào `main`) chạy lại typecheck + test + `eval:retrieval --ci` + `eval:agent --ci` **trước** migration và deploy: trượt bất kỳ bước nào (kể cả nhóm P0 < 100%) thì dừng, production giữ bản cũ. Tất cả offline, không gọi Gemini. Nguyên tắc làm việc: chỉ merge PR có dấu ✓ xanh.
+
 **Kết quả offline thật — 01/11/2026, nhánh `agent-mvp`**
 
 | Nhóm | Số ca | Đã chạy | Đạt |
