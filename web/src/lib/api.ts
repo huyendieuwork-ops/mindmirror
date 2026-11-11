@@ -89,7 +89,9 @@ export function explain(e: unknown): string {
     graph_forbidden: "Có tài liệu không thuộc thư viện của bạn.",
     graph_graph_unavailable: "Chưa kết nối được cơ sở dữ liệu đồ thị. Thử lại sau ít phút.",
   };
-  return m[e.code] ?? `Lỗi ${e.status}: ${e.code}`;
+  if (m[e.code]) return m[e.code]!;
+  if (e.code === "internal_error" || e.status >= 500) return "Máy chủ gặp sự cố khi xử lý yêu cầu này. Thử lại sau ít phút; nếu vẫn lỗi, hãy báo cho nhóm hỗ trợ kèm tên tệp hoặc thao tác vừa làm.";
+  return `Lỗi ${e.status}: ${e.code}`;
 }
 
 async function headers(): Promise<Record<string, string>> {
