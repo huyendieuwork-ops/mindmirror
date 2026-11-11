@@ -67,6 +67,8 @@ export interface NewSessionInput {
   settings?: UserSettings;
   /** Khám phá "học từ đầu": có trình độ → phiên chạy theo dàn ý + điểm kiểm tra. */
   level?: LearnerLevel | null;
+  /** Câu hỏi đầy đủ người học gõ khi mở phiên (topic là tiêu đề rút gọn). */
+  request?: string | null;
 }
 
 const uid = () => crypto.randomUUID();
@@ -77,8 +79,14 @@ export function createSession(input: NewSessionInput, deps: Pick<EngineDeps, "no
   const id = deps.id ?? uid;
   const topic = input.topic.trim().slice(0, 200);
   const path = input.mode === "explore" && input.level ? rulesPath(topic, input.level) : null;
+  const rq = input.request?.trim().slice(0, 1000) || null;
+  const request = rq && rq.replace(/[?\s.!]+$/, "") !== topic.replace(/[?\s.!]+$/, "") ? rq : null;
   const opening = path ? pathOpening(topic, path) :
-    input.mode === "reunderstand"
+    request && input.mode === "explore"
+      ? "Mình trả lời câu hỏi của bạn ngay đây nhé — phần nào có nguồn, mình ghi rõ nguồn."
+      : request && input.mode === "reunderstand"
+        ? `Mình cùng nhìn lại “${topic}” nhé, và sẽ tập trung vào đúng điều bạn vừa nêu. Trước hết, bạn thử giải thích theo cách bạn đang hiểu — không cần chính xác từng chữ.`
+        : input.mode === "reunderstand"
       ? `Mình cùng nhìn lại “${topic}” nhé. Bạn thử giải thích theo cách bạn đang hiểu xem — không cần chính xác từng chữ. Chỗ nào bạn thấy hay vướng nhất?`
       : `Hay đấy! Về “${topic}”, bạn đang tò mò nhất điều gì — muốn hiểu nguyên lý, xem ví dụ đời thường, hay thử tự đoán xem vì sao trước?`;
   return {
@@ -101,6 +109,7 @@ export function createSession(input: NewSessionInput, deps: Pick<EngineDeps, "no
       selfConfidence: input.selfConfidence ?? null,
       summary: "",
       pendingModeSuggestion: null,
+      request,
       path,
     },
     gaps: [],
@@ -124,7 +133,7 @@ export async function prepareGroundedSession(session: Session, deps: Pick<Engine
   if (!deps.retriever || s.documentIds.length === 0) return s;
   const trace = deps.trace ?? new NoopTrace();
   return trace.run("agent.plan", "chain", null, async (span) => {
-    const query = [s.state.topic, s.state.goal].filter(Boolean).join(". ");
+    const query = [s.state.topic, s.state.goal, s.state.request].filter(Boolean).join(". ").slice(0, 600);
     const retrieved = await deps.retriever!.search(s.userId, s.documentIds, query, 6, { trace, parent: span, purpose: "plan" });
     span.set({ retrieved: retrieved.length });
     const docTitle = retrieved[0]?.documentTitle;
@@ -136,7 +145,7 @@ export async function prepareGroundedSession(session: Session, deps: Pick<Engine
       return s;
     }
     try {
-      const p = planPrompt(s.state.topic, s.state.goal, retrieved);
+      const p = planPrompt(s.state.topic, [s.state.goal, s.state.request].filter(Boolean).join(" — ") || null, retrieved);
       const res = await deps.core.generate({ system: p.system, user: p.user, maxOutputTokens: 900, temperature: 0.2, purpose: "plan" }, span);
       const parsed = PlanOutputSchema.safeParse(extractJson(res.text));
       if (!parsed.success) throw new Error("PLAN_SCHEMA");
@@ -173,10 +182,10 @@ export async function prepareLearningPath(session: Session, deps: Pick<EngineDep
   return trace.run("agent.path_plan", "chain", null, async (span) => {
     let retrieved: RetrievedChunk[] = [];
     if (deps.retriever && s.documentIds.length) {
-      retrieved = await deps.retriever.search(s.userId, s.documentIds, s.state.topic, 6, { trace, parent: span, purpose: "plan" }).catch(() => []);
+      retrieved = await deps.retriever.search(s.userId, s.documentIds, [s.state.topic, s.state.request].filter(Boolean).join(". ").slice(0, 600), 6, { trace, parent: span, purpose: "plan" }).catch(() => []);
     }
     try {
-      const p = pathPlanPrompt(s.state.topic, path.level, s.state.folderGoal ?? null, retrieved);
+      const p = pathPlanPrompt(s.state.topic, path.level, s.state.folderGoal ?? null, retrieved, s.state.request ?? null);
       const res = await deps.core.generate({ system: p.system, user: p.user, maxOutputTokens: 900, temperature: 0.3, purpose: "plan" }, span);
       const parsed = PathOutputSchema.safeParse(extractJson(res.text));
       if (!parsed.success) throw new Error("PATH_SCHEMA");
