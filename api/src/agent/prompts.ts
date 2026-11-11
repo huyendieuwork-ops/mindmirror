@@ -29,10 +29,13 @@ S3. KHÔNG nêu đáp án đầy đủ khi người học chưa xin; không sử
 S4. CHẤM MỖI TIÊU CHÍ theo đúng thứ tự sau, dừng ở bước đầu tiên khớp:
     (1) Không có nội dung về tiêu chí (chỉ "đúng rồi"/"em hiểu", xin được ghi nhận, đoán, chỉ so sánh hơn kém) → "unclear".
     (2) Có khẳng định NGƯỢC với tài liệu về tiêu chí này (không có tài liệu: ngược với kiến thức chuẩn) → "contradicted" (kèm source_ref nếu có tài liệu).
+        Một ĐỊNH NGHĨA SAI cũng là khẳng định ngược, KHÔNG phải "thiếu ý": người học nêu điều kiện của khái niệm khác thay cho khái niệm đang hỏi, hoặc đưa ra một tiêu chí sai thay cho tiêu chí đúng.
+        Ví dụ: "BCNF là khi bảng có khóa chính" → "contradicted" (điều kiện sai, không phải định nghĩa thiếu); "1NF là khi không có phụ thuộc bắc cầu" → "contradicted" (đó là điều kiện của 3NF).
     (3) Nêu đủ MỌI ý "Bắt buộc" trong <rubric> (không có <rubric>: đủ ý cốt lõi của khái niệm); diễn đạt khác hoặc ví dụ đúng vẫn tính → "observed".
         Ví dụ: tiêu chí 3NF, người học nói "NHANVIEN(MaNV, MaPhong, TenPhong) vi phạm 3NF vì TenPhong phụ thuộc MaPhong, MaPhong lại phụ thuộc MaNV" → "observed" (ví dụ chỉ ra đúng phụ thuộc bắc cầu, không cần đọc lại định nghĩa).
+        Một ví dụ cụ thể chỉ ra ĐÚNG cơ chế của ý "Bắt buộc" là đã nêu ý đó → "observed"; không hạ xuống "unclear" chỉ vì người học không đọc định nghĩa.
     (4) Còn lại (đúng một phần, thiếu ít nhất một ý "Bắt buộc") → "unclear"; ghi ý còn thiếu vào suspected_gaps và hỏi đúng ý đó.
-S5. Thiếu ≠ sai: thiếu ý là bước (4), không phải (2). Phân vân giữa hai nhãn → "unclear". Mỗi tiêu chí tối đa MỘT mục observed_evidence mỗi lượt. Giọng tự tin hay rụt rè không đổi nhãn.
+S5. Thiếu ≠ sai: thiếu ý là bước (4), không phải (2). Chỉ chọn "unclear" vì phân vân khi lời người học KHÔNG khớp rõ với bước (2) hay (3) ở trên; định nghĩa sai rõ ràng → (2), ví dụ đúng cơ chế → (3). Mỗi tiêu chí tối đa MỘT mục observed_evidence mỗi lượt. Giọng tự tin hay rụt rè không đổi nhãn.
 S6. Đã "observed" nhưng còn thiếu ý "Không bắt buộc": GIỮ "observed". Ghi nhận phần đúng, rồi hỏi gợi mở về MỘT ý còn thiếu (không nêu thẳng đáp án, trừ khi người học xin). KHÔNG đưa ý đó vào suspected_gaps. Người học không trả lời được cũng không hạ nhãn.`;
 
 // Khám phá kiến thức: giải thích có hệ thống, trực quan, phân biệt đã xác minh / chưa chắc chắn.
