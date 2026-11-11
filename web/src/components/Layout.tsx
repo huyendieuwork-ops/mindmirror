@@ -1,29 +1,30 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase, signOut } from "../lib/supabase";
 import { buildNotices, pref, setPref, useLearningData, MODE_PAGE, sessionPath } from "../lib/data";
 import { Avatar, Icon, timeAgo, fmtDate, type IconName } from "./ui";
 
 export interface UserInfo { name: string; email: string | null; avatar: string | null }
 
-const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
-  { to: "/", label: "Trang chủ", icon: "home", end: true },
-  { to: "/check", label: "Kiểm tra kiến thức", icon: "check" },
-  { to: "/explore", label: "Khám phá kiến thức", icon: "compass" },
-  { to: "/folders", label: "My Folder", icon: "folder" },
-  { to: "/reports", label: "Báo cáo của tôi", icon: "chart" },
-  { to: "/settings", label: "Cài đặt", icon: "gear" },
+/** 4 mục chính; "match" quyết định mục nào sáng (vd phiên học /check/:id vẫn thuộc "Học"). */
+const NAV: { to: string; label: string; icon: IconName; match: RegExp }[] = [
+  { to: "/", label: "Học", icon: "home", match: /^\/($|check|explore|s\/)/ },
+  { to: "/folders", label: "Thư mục", icon: "folder", match: /^\/(folders|library)/ },
+  { to: "/reports", label: "Tiến độ", icon: "chart", match: /^\/(reports|history)/ },
+  { to: "/settings", label: "Cài đặt", icon: "gear", match: /^\/settings/ },
 ];
 
 const CRUMB: [RegExp, string][] = [
-  [/^\/$/, "Trang chủ"], [/^\/check/, "Kiểm tra kiến thức"], [/^\/explore/, "Khám phá kiến thức"], [/^\/folders/, "Quản lý My Folder"],
-  [/^\/reports/, "Báo cáo của tôi"], [/^\/settings/, "Cài đặt"], [/^\/history/, "Lịch sử học tập"], [/^\/library/, "Kết nối học liệu"],
+  [/^\/$/, "Bắt đầu học"], [/^\/check/, "Kiểm tra hiểu biết"], [/^\/explore/, "Khám phá"], [/^\/folders/, "Thư mục"],
+  [/^\/reports/, "Tiến độ"], [/^\/settings/, "Cài đặt"], [/^\/history/, "Lịch sử học tập"], [/^\/library/, "Kết nối học liệu"],
   [/^\/help/, "Trung tâm trợ giúp"], [/^\/s\//, "Phiên học"],
 ];
 
 export default function Layout({ children, user }: { children: ReactNode; user: UserInfo }) {
   const [drawer, setDrawer] = useState(false);
   const [palette, setPalette] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => pref<boolean>("nav-collapsed", false));
+  const toggleNav = () => setCollapsed((c) => { setPref("nav-collapsed", !c); return !c; });
   const loc = useLocation();
   useEffect(() => setDrawer(false), [loc.pathname]);
   useEffect(() => {
@@ -36,33 +37,43 @@ export default function Layout({ children, user }: { children: ReactNode; user: 
   return (
     <div className="min-h-full bg-paper">
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-line bg-sheet transition-transform lg:translate-x-0 ${drawer ? "translate-x-0 shadow-xl" : "-translate-x-full"}`}>
-        <Link to="/" className="flex items-center gap-2.5 px-6 pt-6 pb-8">
-          <img src="/logo-mark.webp" alt="" width={36} height={36} />
-          <span className="text-[1.35rem] font-extrabold tracking-tight font-serif"><span className="wordmark-a">Mind</span><span className="wordmark-b">Mirror</span></span>
-        </Link>
-        <nav className="flex-1 space-y-1 px-3" aria-label="Điều hướng chính">
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end}
-              className={({ isActive }) => `relative flex items-center gap-3 rounded-xl px-4 py-2.5 text-[0.94rem] transition-colors ${isActive ? "bg-mist font-semibold text-mirror before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-mirror" : "text-ink/75 hover:bg-mist/60 hover:text-ink"}`}>
-              <Icon name={n.icon} className="h-[18px] w-[18px]" />
-              {n.label}
-            </NavLink>
-          ))}
+      {/* Thanh bên: mở rộng (w-64) hoặc thu gọn chỉ còn biểu tượng (w-[76px]) trên màn hình lớn; trên điện thoại là ngăn kéo. */}
+      <aside className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-line bg-sheet transition-[transform,width] duration-200 lg:translate-x-0 ${collapsed ? "lg:w-[76px]" : ""} ${drawer ? "translate-x-0 shadow-xl" : "-translate-x-full"}`}>
+        <div className={`flex items-center gap-2.5 pt-6 pb-8 ${collapsed ? "px-6 lg:flex-col lg:px-0" : "px-5"}`}>
+          <Link to="/" className="flex min-w-0 flex-1 items-center gap-2.5" aria-label="MindMirror – về trang chủ">
+            <img src="/logo-mark.webp" alt="" width={36} height={36} className="shrink-0" />
+            <AppWordmark className={`text-[1.3rem] ${collapsed ? "lg:hidden" : ""}`} />
+          </Link>
+          <button onClick={toggleNav} className="hidden h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-muted hover:border-mirror/50 hover:text-ink lg:grid"
+            aria-label={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"} aria-expanded={!collapsed} title={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}>
+            <Icon name="panel" className={`h-[18px] w-[18px] ${collapsed ? "" : "rotate-180"}`} />
+          </button>
+        </div>
+        <nav className={`flex-1 space-y-1 ${collapsed ? "px-3 lg:px-2.5" : "px-3"}`} aria-label="Điều hướng chính">
+          {NAV.map((n) => {
+            const active = n.match.test(loc.pathname);
+            return (
+              <Link key={n.to} to={n.to} aria-current={active ? "page" : undefined} title={collapsed ? n.label : undefined}
+                className={`relative flex items-center gap-3 rounded-xl py-2.5 text-[0.94rem] transition-colors ${collapsed ? "px-4 lg:justify-center lg:px-0" : "px-4"} ${active ? "bg-mist font-semibold text-mirror before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-mirror" : "text-ink/75 hover:bg-mist/60 hover:text-ink"}`}>
+                <Icon name={n.icon} className="h-5 w-5 shrink-0" />
+                <span className={collapsed ? "lg:sr-only" : ""}>{n.label}</span>
+              </Link>
+            );
+          })}
         </nav>
-        <Link to="/help" className="mx-3 mb-4 mt-4 flex items-center gap-3 border-t border-line px-3 pt-4 text-left">
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-paper text-muted"><Icon name="help" /></span>
-          <span><span className="block text-sm font-semibold text-ink">Trung tâm trợ giúp</span><span className="block text-xs text-muted">Hướng dẫn sử dụng</span></span>
+        <Link to="/help" title={collapsed ? "Trợ giúp" : undefined} className={`mb-4 mt-4 flex items-center gap-3 border-t border-line pt-4 text-left ${collapsed ? "mx-3 px-3 lg:mx-2.5 lg:justify-center lg:px-0" : "mx-3 px-3"}`}>
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-paper text-muted"><Icon name="help" /></span>
+          <span className={collapsed ? "lg:sr-only" : ""}><span className="block text-sm font-semibold text-ink">Trợ giúp</span><span className="block text-xs text-muted">Hướng dẫn sử dụng</span></span>
         </Link>
       </aside>
       {drawer && <div className="fixed inset-0 z-30 bg-ink/20 lg:hidden" onClick={() => setDrawer(false)} />}
 
-      <div className="lg:pl-64">
+      <div className={`transition-[padding] duration-200 ${collapsed ? "lg:pl-[76px]" : "lg:pl-64"}`}>
         {/* Topbar */}
         <header className="sticky top-0 z-20 border-b border-line bg-sheet/90 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
           <div className="flex h-16 items-center gap-3 px-4 sm:px-8">
             <button className="rounded-lg p-2 text-muted hover:bg-mist lg:hidden" onClick={() => setDrawer(true)} aria-label="Mở menu"><Icon name="menu" className="h-5 w-5" /></button>
-            <p className="hidden min-w-0 truncate text-sm sm:block"><span className="text-muted">Không gian học tập</span><span className="mx-2 text-line">/</span><span className="font-semibold text-ink">{crumb}</span></p>
+            <p className="hidden min-w-0 truncate text-sm font-semibold text-ink sm:block">{crumb}</p>
             <div className="ml-auto flex items-center gap-2 sm:gap-3">
               <button onClick={() => setPalette(true)} className="flex h-10 w-10 items-center justify-center gap-2 rounded-xl border border-line bg-paper/60 text-sm text-muted hover:border-mirror/50 md:w-72 md:justify-start md:px-3" aria-label="Tìm kiếm">
                 <Icon name="search" />
@@ -157,7 +168,7 @@ function Notifications() {
               ))}
             </ul>
           )}
-          <Link to="/reports" onClick={() => setOpen(false)} className="block border-t border-line py-3 text-center text-sm font-medium text-ink hover:bg-mist/40">Xem báo cáo học tập</Link>
+          <Link to="/reports" onClick={() => setOpen(false)} className="block border-t border-line py-3 text-center text-sm font-medium text-ink hover:bg-mist/40">Xem tiến độ học tập</Link>
         </div>
       )}
     </div>
@@ -231,6 +242,10 @@ export function Logo({ size = 32, className = "" }: { size?: number; className?:
 }
 export function Wordmark({ className = "" }: { className?: string }) {
   return <span className={`font-serif font-extrabold tracking-tight ${className}`}><span className="wordmark-a">Mind</span><span className="wordmark-b">Mirror</span></span>;
+}
+/** Chữ MindMirror theo logo: "Mind" xanh than, "Mirror" xanh sáng, nét bo tròn (dùng trong ứng dụng; landing giữ Wordmark cũ). */
+export function AppWordmark({ className = "" }: { className?: string }) {
+  return <span className={`font-sans font-bold tracking-tight ${className}`}><span className="wordmark-a">Mind</span><span style={{ color: "#4FA3EE" }}>Mirror</span></span>;
 }
 export function Mark({ size = 18 }: { size?: number }) {
   return <Logo size={Math.round(size * 1.4)} />;
