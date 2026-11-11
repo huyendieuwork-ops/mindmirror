@@ -335,6 +335,24 @@ async function runTurnInner(
     workflow.push({ step: "evidence_retrieval", ms: 0, status: "skipped", note: "no_session_documents" });
   }
 
+  // 4a'. Luôn gửi kèm đoạn tài liệu gắn với tiêu chí đang chấm (đã kiểm chứng khi tạo tiêu chí), để khi người học nói SAI
+  // model có sẵn đúng câu cần trích làm căn cứ. Không có đoạn này, phán đoán "sai" bị guardrail hạ xuống "chưa rõ".
+  if (deps.retriever && s.rubric.length) {
+    const gapConcept = s.gaps.find((g) => g.id === s.state.currentGapId)?.concept;
+    const observed = new Set(s.evidence.filter((e) => e.status === "observed" && e.criterionId).map((e) => e.criterionId));
+    const focus = [
+      ...s.rubric.filter((c) => gapConcept && sameConcept(c.concept, gapConcept)),
+      ...s.rubric.filter((c) => !observed.has(c.id)),
+      ...s.rubric,
+    ].filter((c, i, a) => a.indexOf(c) === i).slice(0, 2);
+    const missing = focus.map((c) => c.citation.chunkId).filter((id) => !retrieved.some((r) => r.chunk.id === id));
+    if (missing.length) {
+      const pinned = await deps.retriever.getChunks(s.userId, missing);
+      retrieved.push(...pinned.filter((r) => s.documentIds.includes(r.chunk.documentId)));
+      root.child("rag.rubric_context", "retriever", { purpose: "rubric", method: "by_id", results: pinned.map((r) => r.chunk.page) }).end();
+    }
+  }
+
   // 4b. Công cụ cho model: code chỉ MỞ công cụ phù hợp ngữ cảnh, model tự quyết có gọi hay không.
   const modelTools = deps.tools && deps.core.supportsTools ? await availableTools(s, text, deps.tools.store) : [];
   const grounded = retrieved.length > 0 || s.rubric.length > 0;

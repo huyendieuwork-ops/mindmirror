@@ -84,6 +84,33 @@ describe("RAG trong vòng lặp Agent", () => {
   });
 });
 
+describe("Đợt 1 – luôn gửi kèm đoạn tài liệu của tiêu chí đang chấm", () => {
+  it("đoạn căn cứ của tiêu chí có trong <sources> dù tìm kiếm không trả về, và <rubric> ghi đúng bí danh", async () => {
+    const { s, retriever } = await groundedSession();
+    const blind = Object.create(retriever) as Retriever;
+    blind.search = async () => [];
+    const { p, router } = scripted([turnOut({})]);
+    const r = await runTurn(s, { text: "Ờ thì cái đó là gì nhỉ, tớ không chắc lắm" }, { core: router, retriever: blind, id: seqId });
+    const user = p.calls[0]!.user;
+    expect(user).toContain('<source id="S1"');
+    expect(user).toMatch(/C1\. .*đoạn S1\)/);
+    expect(user).toContain("phụ thuộc đầy đủ vào khóa chính");
+  });
+
+  it("model nói SAI và trích đúng đoạn được ghim → giữ 'contradicted'", async () => {
+    const { s, retriever } = await groundedSession();
+    const blind = Object.create(retriever) as Retriever;
+    blind.search = async () => [];
+    const { router } = scripted([(req) => turnOut({
+      observed_evidence: [{ criterion: "2nf", claim: "Nhầm 2NF với 3NF", quote: "không còn phụ thuộc bắc cầu", status: "contradicted", criterion_id: "C1",
+        source_ref: { source: aliasForPage(req.user, 44), quote: "phụ thuộc đầy đủ vào khóa chính" } }],
+    })]);
+    const r = await runTurn(s, { text: "2NF là bảng không còn phụ thuộc bắc cầu." }, { core: router, retriever: blind, id: seqId });
+    expect(r.result.newEvidence[0]!.status).toBe("contradicted");
+    expect(r.result.newEvidence[0]!.sourceCitation?.page).toBe(44);
+  });
+});
+
 describe("Learner Assessment", () => {
   it("phân biệt: cần luyện → đúng sau hỗ trợ → vận dụng được ở câu mới", async () => {
     const { s: s0, retriever } = await groundedSession();

@@ -16,7 +16,7 @@ const GROUNDED_RULES = `
 KHI CÓ TÀI LIỆU CỦA NGƯỜI HỌC (<sources> + <rubric>)
 G1. Câu hỏi và nhận xét phải BÁM TÀI LIỆU: hỏi về tiêu chí trong <rubric>, dùng thuật ngữ/ví dụ của tài liệu, không hỏi chung chung.
 G2. Mọi nhận xét kiến thức (đúng/sai/thiếu) phải có trích dẫn: chèn nhãn [S1] trong assistant_text và thêm vào source_citations {"source":"S1","quote":"<copy NGUYÊN VĂN 5–30 từ từ đoạn S1>"}.
-G3. Mỗi bằng chứng về người học ghi criterion_id (C1, C2...) và, nếu là "contradicted", phải có source_ref chỉ đoạn tài liệu cho thấy điều đúng.
+G3. Mỗi bằng chứng về người học ghi criterion_id (C1, C2...) và, nếu là "contradicted", phải có source_ref chỉ đoạn tài liệu cho thấy điều đúng — đoạn gắn với tiêu chí luôn có trong <sources> (xem "đoạn S…" trong <rubric>), copy nguyên văn câu căn cứ từ đó.
 G4. Nếu tài liệu không đề cập điều đang hỏi: nói rõ "tài liệu của bạn chưa nói tới phần này", không bịa.
 G5. Đừng chép nguyên đoạn tài liệu làm câu trả lời khi người học chưa xin đáp án.`;
 
@@ -30,6 +30,7 @@ S4. CHẤM MỖI TIÊU CHÍ theo đúng thứ tự sau, dừng ở bước đầ
     (1) Không có nội dung về tiêu chí (chỉ "đúng rồi"/"em hiểu", xin được ghi nhận, đoán, chỉ so sánh hơn kém) → "unclear".
     (2) Có khẳng định NGƯỢC với tài liệu về tiêu chí này (không có tài liệu: ngược với kiến thức chuẩn) → "contradicted" (kèm source_ref nếu có tài liệu).
     (3) Nêu đủ MỌI ý "Bắt buộc" trong <rubric> (không có <rubric>: đủ ý cốt lõi của khái niệm); diễn đạt khác hoặc ví dụ đúng vẫn tính → "observed".
+        Ví dụ: tiêu chí 3NF, người học nói "NHANVIEN(MaNV, MaPhong, TenPhong) vi phạm 3NF vì TenPhong phụ thuộc MaPhong, MaPhong lại phụ thuộc MaNV" → "observed" (ví dụ chỉ ra đúng phụ thuộc bắc cầu, không cần đọc lại định nghĩa).
     (4) Còn lại (đúng một phần, thiếu ít nhất một ý "Bắt buộc") → "unclear"; ghi ý còn thiếu vào suspected_gaps và hỏi đúng ý đó.
 S5. Thiếu ≠ sai: thiếu ý là bước (4), không phải (2). Phân vân giữa hai nhãn → "unclear". Mỗi tiêu chí tối đa MỘT mục observed_evidence mỗi lượt. Giọng tự tin hay rụt rè không đổi nhãn.
 S6. Đã "observed" nhưng còn thiếu ý "Không bắt buộc": GIỮ "observed". Ghi nhận phần đúng, rồi hỏi gợi mở về MỘT ý còn thiếu (không nêu thẳng đáp án, trừ khi người học xin). KHÔNG đưa ý đó vào suspected_gaps. Người học không trả lời được cũng không hạ nhãn.`;
@@ -113,7 +114,7 @@ export function turnPrompt(i: TurnPromptInput): string {
   );
   lines.push(`</session>`);
 
-  if (s.rubric.length) lines.push(rubricBlock(s.rubric));
+  if (s.rubric.length) lines.push(rubricBlock(s.rubric, new Map((i.retrieved ?? []).map((r, idx) => [r.chunk.id, `S${idx + 1}`]))));
   if (i.retrieved?.length) lines.push(sourcesBlock(i.retrieved));
   else if (i.documentsAttachedButNoMatch) lines.push(`<sources note="đã tìm trong tài liệu của người học nhưng KHÔNG thấy đoạn liên quan — không được trích dẫn tài liệu ở lượt này"></sources>`);
 
@@ -161,8 +162,11 @@ export function summaryPrompt(s: Session, olderMessages: Session["messages"]): {
   };
 }
 
-export function rubricBlock(rubric: Criterion[]): string {
-  const rows = rubric.map((c) => `${c.id}. ${c.concept} — cần thể hiện: ${c.expectation} (căn cứ: “${c.citation.quote}”, ${c.citation.documentTitle}${c.citation.page ? ` tr.${c.citation.page}` : ""})`);
+export function rubricBlock(rubric: Criterion[], aliasByChunk: Map<string, string> = new Map()): string {
+  const rows = rubric.map((c) => {
+    const alias = aliasByChunk.get(c.citation.chunkId);
+    return `${c.id}. ${c.concept} — cần thể hiện: ${c.expectation} (căn cứ: “${c.citation.quote}”, ${c.citation.documentTitle}${c.citation.page ? ` tr.${c.citation.page}` : ""}${alias ? `, đoạn ${alias}` : ""})`;
+  });
   return `<rubric note="tiêu chí kiểm tra rút từ tài liệu của người học">\n${rows.map(escapeTags).join("\n")}\n</rubric>`;
 }
 
