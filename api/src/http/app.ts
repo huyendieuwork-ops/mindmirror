@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
-import { AgentUnavailableError, createSession, prepareGroundedSession, runTurn } from "../agent/engine";
+import { AgentUnavailableError, createSession, prepareGroundedSession, prepareLearningPath, runTurn } from "../agent/engine";
 import { assessLearner } from "../agent/assessment";
 import { checkUserInput } from "../agent/input-guard";
 import { DEFAULT_SETTINGS, type Session } from "../agent/types";
@@ -54,6 +54,8 @@ const CreateSessionBody = z.object({
   source_text: z.string().max(20_000).optional().nullable(),
   document_ids: z.array(z.string().uuid()).max(5).optional(),
   folder_id: z.string().uuid().optional().nullable(),
+  /** Khám phá "học từ đầu": trình độ → dàn ý + điểm kiểm tra. */
+  level: z.enum(["beginner", "some", "review"]).optional().nullable(),
 });
 
 const DocumentBody = z.object({
@@ -228,10 +230,13 @@ export function createApp(over: AppOverrides = {}) {
       let session = createSession({
         userId, mode: body.data.mode, topic: body.data.topic, goal: body.data.goal ?? null, folderGoal,
         selfConfidence: settings.selfAssessment ? body.data.self_confidence ?? null : null,
-        documentIds: docIds, settings,
+        documentIds: docIds, settings, level: body.data.mode === "explore" ? body.data.level ?? null : null,
       });
       trace.data.sessionId = session.id;
-      if (docIds.length) {
+      if (session.state.path) {
+        const { core } = routersFor(env, store, userId, session.id);
+        session = await prepareLearningPath(session, { core, retriever: docIds.length ? new Retriever(store, embedder) : null, trace });
+      } else if (docIds.length) {
         const { core } = routersFor(env, store, userId, session.id);
         session = await prepareGroundedSession(session, { core, retriever: new Retriever(store, embedder), trace });
       }
@@ -610,6 +615,15 @@ export function createApp(over: AppOverrides = {}) {
   });
 
   // ---------- Cài đặt / dữ liệu ----------
+  // Hạn mức hôm nay (cùng cách đếm với chặn tạo phiên: từ 0h UTC = 7h sáng giờ Việt Nam).
+  app.get("/api/me/usage", async (c) => {
+    const { userId, store } = c.var;
+    const since = new Date(); since.setUTCHours(0, 0, 0, 0);
+    const reset = new Date(since.getTime() + 86_400_000);
+    const used = await store.countSessionsSince(userId, since.toISOString());
+    return c.json({ sessionsToday: used, sessionsPerDay: num((c.env ?? {}).LIMIT_SESSIONS_PER_DAY, 3), resetAt: reset.toISOString() });
+  });
+
   app.get("/api/me/settings", async (c) => {
     const { userId, store } = c.var;
     return c.json((await store.getSettings(userId)) ?? DEFAULT_SETTINGS);
@@ -651,6 +665,7 @@ function publicSession(s: Session) {
     topic: s.state.topic,
     goal: s.state.goal,
     folderGoal: s.state.folderGoal ?? null,
+    path: s.state.path ?? null,
     hintLevel: s.state.hintLevel,
     turnCount: s.state.turnCount,
     messages: s.messages.map((m) => ({ id: m.id, role: m.role, text: m.text, action: m.action, citations: m.citations ?? [], webCitations: m.webCitations ?? [] })),
