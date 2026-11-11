@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, explain, type Folder, type LibraryDoc } from "../lib/api";
 import { invalidate, useLearningData } from "../lib/data";
 import { kindLabel, UploadButton, useLibrary } from "../components/DocPicker";
 import KnowledgeGraph from "../components/KnowledgeGraph";
+import FolderRoadmap from "../components/FolderRoadmap";
 import { Btn, Card, Empty, FOLDER_COLORS, FOLDER_TONE, fmtDate, Icon, Modal, PageHeader, SelectBox } from "../components/ui";
 
 const NONE = "none";
@@ -17,13 +18,14 @@ export default function Folders() {
   const [sort, setSort] = useState<"new" | "name">("new");
   const [filter, setFilter] = useState("");
   const [checked, setChecked] = useState<string[]>([]);
-  const [tab, setTab] = useState<"docs" | "graph">("docs");
+  const [tab, setTab] = useState<"docs" | "path" | "graph">((new URLSearchParams(location.search).get("tab") as "path" | "graph" | null) ?? "docs");
   const [dialog, setDialog] = useState<null | { kind: "create" } | { kind: "rename"; folder: Folder } | { kind: "delete"; folder: Folder } | { kind: "move"; ids: string[] } | { kind: "deleteDocs"; ids: string[] }>(params.get("new") ? { kind: "create" } : null);
   const [error, setError] = useState<string | null>(null);
 
   const docs = lib.docs;
   useEffect(() => { if (sel || loading) return; if (folders.length) setSel([...folders].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]!.id); else if (docs.length) setSel(NONE); }, [folders, docs, sel, loading]);
-  useEffect(() => { setChecked([]); setTab("docs"); }, [sel]);
+  const prevSel = useRef(sel);
+  useEffect(() => { if (prevSel.current && prevSel.current !== sel) { setChecked([]); setTab("docs"); } prevSel.current = sel; }, [sel]);
   const count = (id: string) => docs.filter((d) => (id === NONE ? !d.folderId : d.folderId === id)).length;
   const sortedFolders = useMemo(() => [...folders].sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name, "vi") : b.createdAt.localeCompare(a.createdAt))), [folders, sort]);
   const current = folders.find((f) => f.id === sel) ?? null;
@@ -102,13 +104,15 @@ export default function Folders() {
 
               {current && (
                 <div role="tablist" aria-label="Nội dung thư mục" className="flex gap-1 border-b border-line px-5">
-                  {([["docs", `Tài liệu (${shown.length})`], ["graph", "Sơ đồ khái niệm"]] as const).map(([k, l]) => (
+                  {([["docs", `Tài liệu (${shown.length})`], ["path", "Lộ trình"], ["graph", "Sơ đồ khái niệm"]] as const).map(([k, l]) => (
                     <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
                       className={`-mb-px border-b-2 px-3 py-3 text-sm ${tab === k ? "border-mirror font-semibold text-mirror" : "border-transparent text-muted hover:text-ink"}`}>{l}</button>
                   ))}
                 </div>
               )}
-              {current && tab === "graph" ? (
+              {current && tab === "path" ? (
+                <FolderRoadmap folder={current} docs={shown} onOpenGraph={() => setTab("graph")} />
+              ) : current && tab === "graph" ? (
                 <div className="p-5">
                   <p className="mb-4 rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink/80">Sơ đồ được tạo từ các tài liệu trong thư mục: AI đọc từng trang, xác định khái niệm và quan hệ “cần biết trước”, mỗi quan hệ có câu trích nguyên văn làm căn cứ.</p>
                   {shown.length ? <KnowledgeGraph docs={shown} marks={[]} /> : <Empty icon="upload" title="Chưa có tài liệu">Sơ đồ khái niệm cần ít nhất một tài liệu trong thư mục.</Empty>}
