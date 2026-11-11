@@ -125,10 +125,14 @@ export function decide(session: Session, intent: UserIntent | null, limits: Limi
   }
 
   // ---- Lượt tự do: code giới hạn tập hành động theo phase ----
-  return freeTurn(s, session.settings.supportPreference, limits);
+  const lastUser = [...session.messages].reverse().find((m) => m.role === "user")?.text ?? "";
+  return freeTurn(s, session.settings.supportPreference, limits, CONCRETE_QUESTION.test(lastUser));
 }
 
-function freeTurn(s: LearningState, pref: Session["settings"]["supportPreference"], limits: Limits): PolicyDecision {
+/** Câu hỏi kiến thức cụ thể ("… là gì?", "… hoạt động thế nào?") — Khám phá nên trả lời luôn thay vì hỏi lại. */
+const CONCRETE_QUESTION = /\?|\b(là gì|thế nào|như thế nào|ra sao|vì sao|tại sao|khác (gì|nhau|ở)|so sánh)\b/i;
+
+function freeTurn(s: LearningState, pref: Session["settings"]["supportPreference"], limits: Limits, concreteQuestion = false): PolicyDecision {
   const directives: string[] = [];
   let allowed: Action[];
   let target = s.hintLevel;
@@ -137,6 +141,10 @@ function freeTurn(s: LearningState, pref: Session["settings"]["supportPreference
     // Hiểu lại: luôn mời tự giải thích trước, không giảng.
     allowed = ["ask_explain", "ask_clarification", "ask_why"];
     directives.push("Đây là đầu phiên Hiểu lại: mời người học tự giải thích bằng lời của họ trước. KHÔNG giảng bài.");
+  } else if (s.mode === "explore" && s.phase === "entry" && concreteQuestion) {
+    // Đợt 2: người học đã hỏi một câu cụ thể → trả lời câu đó (theo thứ tự nguồn), rồi mới gợi hướng tiếp.
+    allowed = ["explain_foundation", "give_example", "suggest_directions", "acknowledge"];
+    directives.push("Đầu phiên Khám phá và người học đã hỏi một câu cụ thể: trả lời ngắn gọn đúng câu đó trước (theo thứ tự nguồn E4), rồi gợi 2–3 hướng tìm hiểu tiếp. Không ép kiểm tra.");
   } else if (s.mode === "explore" && s.phase === "entry") {
     allowed = ["ask_clarification", "suggest_directions", "acknowledge"];
     directives.push("Đầu phiên Khám phá: làm rõ điều muốn tìm hiểu hoặc đề xuất 2–4 hướng để chọn. Không ép kiểm tra.");
