@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, explain, type Folder, type LibraryDoc } from "../lib/api";
 import { invalidate, useLearningData } from "../lib/data";
 import { kindLabel, UploadButton, useLibrary } from "../components/DocPicker";
+import KnowledgeGraph from "../components/KnowledgeGraph";
 import { Btn, Card, Empty, FOLDER_COLORS, FOLDER_TONE, fmtDate, Icon, Modal, PageHeader, SelectBox } from "../components/ui";
 
 const NONE = "none";
@@ -16,12 +17,13 @@ export default function Folders() {
   const [sort, setSort] = useState<"new" | "name">("new");
   const [filter, setFilter] = useState("");
   const [checked, setChecked] = useState<string[]>([]);
+  const [tab, setTab] = useState<"docs" | "graph">("docs");
   const [dialog, setDialog] = useState<null | { kind: "create" } | { kind: "rename"; folder: Folder } | { kind: "delete"; folder: Folder } | { kind: "move"; ids: string[] } | { kind: "deleteDocs"; ids: string[] }>(params.get("new") ? { kind: "create" } : null);
   const [error, setError] = useState<string | null>(null);
 
   const docs = lib.docs;
   useEffect(() => { if (sel || loading) return; if (folders.length) setSel([...folders].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]!.id); else if (docs.length) setSel(NONE); }, [folders, docs, sel, loading]);
-  useEffect(() => { setChecked([]); }, [sel]);
+  useEffect(() => { setChecked([]); setTab("docs"); }, [sel]);
   const count = (id: string) => docs.filter((d) => (id === NONE ? !d.folderId : d.folderId === id)).length;
   const sortedFolders = useMemo(() => [...folders].sort((a, b) => (sort === "name" ? a.name.localeCompare(b.name, "vi") : b.createdAt.localeCompare(a.createdAt))), [folders, sort]);
   const current = folders.find((f) => f.id === sel) ?? null;
@@ -37,9 +39,9 @@ export default function Folders() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <PageHeader title="Quản lý My Folder" subtitle="Sắp xếp tài liệu và ghi chú học tập của bạn để sử dụng trong Kiểm tra kiến thức hoặc Khám phá kiến thức."
+      <PageHeader title="Thư mục" subtitle="Gom tài liệu và phiên học theo môn. Tài liệu không bắt buộc, nhưng giúp câu trả lời bám sát giáo trình và tạo được sơ đồ khái niệm."
         actions={<>
-          <Btn variant="primary" onClick={() => setDialog({ kind: "create" })}><Icon name="plus" /> Thêm folder</Btn>
+          <Btn variant="primary" onClick={() => setDialog({ kind: "create" })}><Icon name="plus" /> Tạo thư mục</Btn>
           <UploadButton variant="button" onFiles={(f) => lib.upload(f, sel && sel !== NONE ? sel : null)} />
           <SelectBox label="Sắp xếp" value={sort} onChange={setSort} className="w-44" options={[{ value: "new", label: "Sắp xếp: Mới nhất" }, { value: "name", label: "Sắp xếp: Tên A–Z" }]} />
         </>} />
@@ -47,34 +49,11 @@ export default function Folders() {
         <p className={`rounded-lg px-4 py-2.5 text-sm ${lib.busy ? "bg-mist text-mirror" : "bg-rust/10 text-rust"}`}>{lib.busy ?? lib.error ?? error}</p>
       )}
 
-      <Card title="Tất cả folder" subtitle="Quản lý các folder tài liệu học tập của bạn." action={<span className="text-xs text-muted">{folders.length} folder • {docs.length} tài liệu</span>}>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-          {sortedFolders.map((f, i) => (
-            <button key={f.id} onClick={() => choose(f.id)} className={`relative rounded-xl border p-4 text-left transition-all hover:-translate-y-0.5 ${sel === f.id ? "border-mirror ring-2 ring-mirror/15" : "border-line hover:border-mirror/50"}`}>
-              {i === 0 && sort === "new" && <span className="absolute right-3 top-3 rounded-full bg-mist px-2 py-0.5 text-[10px] font-semibold text-mirror">Gần đây</span>}
-              <span className={`grid h-9 w-9 place-items-center rounded-lg ${FOLDER_TONE[f.color] ?? FOLDER_TONE.blue}`}><Icon name="folder" className="h-5 w-5" /></span>
-              <p className="mt-4 truncate font-semibold text-ink">{f.name}</p>
-              <p className="text-xs text-muted">{count(f.id)} tài liệu</p>
-            </button>
-          ))}
-          {count(NONE) > 0 && (
-            <button onClick={() => choose(NONE)} className={`rounded-xl border p-4 text-left ${sel === NONE ? "border-mirror ring-2 ring-mirror/15" : "border-line hover:border-mirror/50"}`}>
-              <span className="grid h-9 w-9 place-items-center rounded-lg bg-paper text-muted"><Icon name="file" className="h-5 w-5" /></span>
-              <p className="mt-4 truncate font-semibold text-ink">Chưa xếp thư mục</p>
-              <p className="text-xs text-muted">{count(NONE)} tài liệu</p>
-            </button>
-          )}
-          <button onClick={() => setDialog({ kind: "create" })} className="flex min-h-[7.5rem] flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line text-sm font-medium text-mirror hover:border-mirror hover:bg-mist/40">
-            <Icon name="plus" className="h-5 w-5" /> Thêm folder
-          </button>
-        </div>
-      </Card>
-
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[18rem_1fr]">
-        <Card title="Danh sách folder" bodyClass="p-5 pt-4">
+        <Card title="Danh sách thư mục" bodyClass="p-5 pt-4">
           <div className="relative">
             <Icon name="search" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Tìm folder…" className="w-full rounded-lg border border-line bg-sheet py-2 pl-9 pr-3 text-sm outline-none focus:border-mirror" />
+            <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Tìm thư mục…" className="w-full rounded-lg border border-line bg-sheet py-2 pl-9 pr-3 text-sm outline-none focus:border-mirror" />
           </div>
           <ul className="mt-3 space-y-1">
             {sortedFolders.filter((f) => f.name.toLowerCase().includes(filter.toLowerCase())).map((f) => (
@@ -86,40 +65,56 @@ export default function Folders() {
                 </button>
               </li>
             ))}
-            {folders.length === 0 && <li className="px-3 py-4 text-sm text-muted">Chưa có folder nào.</li>}
+            {folders.length === 0 && <li className="px-3 py-4 text-sm text-muted">Chưa có thư mục nào.</li>}
           </ul>
         </Card>
 
         <section className="panel min-w-0">
           {!sel ? (
-            <div className="p-5"><Empty icon="folder" title="Tạo folder đầu tiên" action={<Btn variant="primary" onClick={() => setDialog({ kind: "create" })}><Icon name="plus" /> Thêm folder</Btn>}>Gom slide, giáo trình theo môn học để MindMirror đối chiếu khi bạn học.</Empty></div>
+            <div className="p-5"><Empty icon="folder" title="Tạo thư mục đầu tiên" action={<Btn variant="primary" onClick={() => setDialog({ kind: "create" })}><Icon name="plus" /> Tạo thư mục</Btn>}>Gom slide, giáo trình theo môn học để MindMirror đối chiếu khi bạn học.</Empty></div>
           ) : (
             <>
               <div className="flex flex-col gap-4 border-b border-line p-5 xl:flex-row xl:items-start xl:justify-between">
                 <div className="flex items-center gap-3">
                   <span className={`grid h-12 w-12 place-items-center rounded-full ${current ? FOLDER_TONE[current.color] ?? FOLDER_TONE.blue : "bg-paper text-muted"}`}><Icon name="folder" className="h-6 w-6" /></span>
-                  <div><h2 className="text-lg font-bold text-ink">{current?.name ?? "Chưa xếp thư mục"}</h2><p className="text-xs text-muted">{shown.length} tài liệu</p></div>
+                  <div><h2 className="text-lg font-bold text-ink">{current?.name ?? "Chưa xếp thư mục"}</h2><p className="text-xs text-muted">{shown.length} tài liệu</p>
+                    {current && (current.goal
+                      ? <p className="mt-1 max-w-xl text-sm text-ink"><span className="font-medium">Mục tiêu học:</span> {current.goal} <button className="text-mirror hover:underline" onClick={() => setDialog({ kind: "rename", folder: current })}>Sửa</button></p>
+                      : <button className="mt-1 text-sm text-mirror hover:underline" onClick={() => setDialog({ kind: "rename", folder: current })}>+ Thêm mục tiêu học (không bắt buộc)</button>)}
+                  </div>
                 </div>
                 <div className="flex flex-col items-start gap-2 xl:items-end">
                   {current && (
                     <div className="flex flex-wrap gap-2">
-                      <Btn onClick={() => setDialog({ kind: "rename", folder: current })}><Icon name="pencil" /> Đổi tên</Btn>
+                      <Btn onClick={() => setDialog({ kind: "rename", folder: current })}><Icon name="pencil" /> Chỉnh sửa</Btn>
                       <Btn disabled={!checked.length} onClick={() => setDialog({ kind: "move", ids: checked })}><Icon name="move" /> Di chuyển</Btn>
-                      <Btn variant="danger" onClick={() => setDialog({ kind: "delete", folder: current })}><Icon name="trash" /> Xóa folder</Btn>
+                      <Btn variant="danger" onClick={() => setDialog({ kind: "delete", folder: current })}><Icon name="trash" /> Xoá thư mục</Btn>
                     </div>
                   )}
-                  {!current && <Btn disabled={!checked.length} onClick={() => setDialog({ kind: "move", ids: checked })}><Icon name="move" /> Chuyển vào folder</Btn>}
+                  {!current && <Btn disabled={!checked.length} onClick={() => setDialog({ kind: "move", ids: checked })}><Icon name="move" /> Chuyển vào thư mục</Btn>}
                   {current && (
                     <div className="flex flex-wrap gap-2">
-                      <Btn variant="soft" disabled={!shown.length} onClick={() => nav(`/check?folder=${current.id}`)}><Icon name="check" /> Dùng cho Kiểm tra kiến thức</Btn>
-                      <Btn variant="soft" disabled={!shown.length} onClick={() => nav(`/explore?folder=${current.id}`)}><Icon name="compass" /> Dùng cho Khám phá kiến thức</Btn>
+                      <Btn variant="primary" onClick={() => nav(`/?folder=${current.id}`)}><Icon name="arrowRight" /> Học trong thư mục này</Btn>
                     </div>
                   )}
                 </div>
               </div>
 
-              {shown.length === 0 ? (
-                <div className="p-5"><Empty icon="upload" title="Folder chưa có tài liệu" action={<UploadButton variant="button" onFiles={(f) => lib.upload(f, current?.id ?? null)} />}>Tải lên PDF, slide PPTX hoặc ghi chú .txt/.md. Chữ được trích ngay trên trình duyệt.</Empty></div>
+              {current && (
+                <div role="tablist" aria-label="Nội dung thư mục" className="flex gap-1 border-b border-line px-5">
+                  {([["docs", `Tài liệu (${shown.length})`], ["graph", "Sơ đồ khái niệm"]] as const).map(([k, l]) => (
+                    <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+                      className={`-mb-px border-b-2 px-3 py-3 text-sm ${tab === k ? "border-mirror font-semibold text-mirror" : "border-transparent text-muted hover:text-ink"}`}>{l}</button>
+                  ))}
+                </div>
+              )}
+              {current && tab === "graph" ? (
+                <div className="p-5">
+                  <p className="mb-4 rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink/80">Sơ đồ được tạo từ các tài liệu trong thư mục: AI đọc từng trang, xác định khái niệm và quan hệ “cần biết trước”, mỗi quan hệ có câu trích nguyên văn làm căn cứ.</p>
+                  {shown.length ? <KnowledgeGraph docs={shown} marks={[]} /> : <Empty icon="upload" title="Chưa có tài liệu">Sơ đồ khái niệm cần ít nhất một tài liệu trong thư mục.</Empty>}
+                </div>
+              ) : shown.length === 0 ? (
+                <div className="p-5"><Empty icon="upload" title="Thư mục chưa có tài liệu" action={<UploadButton variant="button" onFiles={(f) => lib.upload(f, current?.id ?? null)} />}>Tải lên PDF, slide PPTX hoặc ghi chú .txt/.md. Chữ được trích ngay trên trình duyệt.</Empty></div>
               ) : (
                 <div className="overflow-x-auto p-3">
                   <table className="w-full min-w-[34rem] text-sm">
@@ -161,13 +156,13 @@ export default function Folders() {
         </Card>
         <div className="panel flex gap-4 bg-mist/40 p-5">
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-sheet text-mirror"><Icon name="bulb" className="h-5 w-5" /></span>
-          <div><p className="font-semibold text-ink">Folder là tùy chọn</p><p className="mt-1 text-sm text-muted">Bạn có thể bắt đầu học tập ngay cả khi chưa tải tài liệu lên. Hãy tạo folder và lưu tài liệu để dễ dàng sử dụng trong Kiểm tra kiến thức hoặc Khám phá kiến thức.</p></div>
+          <div><p className="font-semibold text-ink">Tài liệu là tuỳ chọn</p><p className="mt-1 text-sm text-muted">Bạn có thể học ngay mà không cần tải tài liệu. Đặt mục tiêu học cho thư mục để AI chọn ví dụ và mức độ giải thích phù hợp.</p></div>
         </div>
       </div>
 
       <FolderDialog dialog={dialog} folders={folders} error={error} onClose={() => { setDialog(null); setError(null); if (params.get("new")) setParams({}); }}
-        onCreate={(name, color) => act(async () => { const f = await api.createFolder({ name, color }); choose(f.id); })}
-        onRename={(f, name, color) => act(() => api.updateFolder(f.id, { name, color }))}
+        onCreate={(name, color, goal) => act(async () => { const f = await api.createFolder({ name, color, goal }); choose(f.id); })}
+        onRename={(f, name, color, goal) => act(() => api.updateFolder(f.id, { name, color, goal }))}
         onDelete={(f) => act(async () => { await api.deleteFolder(f.id); choose(""); })}
         onMove={(ids, to) => act(async () => { for (const id of ids) await api.moveDocument(id, to); setChecked([]); })}
         onDeleteDocs={(ids) => act(async () => { for (const id of ids) await api.deleteDocument(id); setChecked([]); })} />
@@ -207,27 +202,33 @@ type DialogState = null | { kind: "create" } | { kind: "rename"; folder: Folder 
 
 function FolderDialog({ dialog, folders, error, onClose, onCreate, onRename, onDelete, onMove, onDeleteDocs }: {
   dialog: DialogState; folders: Folder[]; error: string | null; onClose: () => void;
-  onCreate: (name: string, color: string) => void; onRename: (f: Folder, name: string, color: string) => void; onDelete: (f: Folder) => void;
+  onCreate: (name: string, color: string, goal: string | null) => void; onRename: (f: Folder, name: string, color: string, goal: string | null) => void; onDelete: (f: Folder) => void;
   onMove: (ids: string[], to: string | null) => void; onDeleteDocs: (ids: string[]) => void;
 }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState("blue");
+  const [goal, setGoal] = useState("");
   const [to, setTo] = useState<string>(NONE);
   useEffect(() => {
-    if (dialog?.kind === "rename") { setName(dialog.folder.name); setColor(dialog.folder.color); }
-    else if (dialog?.kind === "create") { setName(""); setColor(FOLDER_COLORS[folders.length % FOLDER_COLORS.length] ?? "blue"); }
+    if (dialog?.kind === "rename") { setName(dialog.folder.name); setColor(dialog.folder.color); setGoal(dialog.folder.goal ?? ""); }
+    else if (dialog?.kind === "create") { setName(""); setGoal(""); setColor(FOLDER_COLORS[folders.length % FOLDER_COLORS.length] ?? "blue"); }
     else if (dialog?.kind === "move") setTo(folders[0]?.id ?? NONE);
   }, [dialog, folders]);
   if (!dialog) return null;
   const err = error && <p className="mt-3 text-sm text-rust">{error}</p>;
   if (dialog.kind === "create" || dialog.kind === "rename") {
-    const submit = () => name.trim() && (dialog.kind === "create" ? onCreate(name.trim(), color) : onRename(dialog.folder, name.trim(), color));
+    const submit = () => name.trim() && (dialog.kind === "create" ? onCreate(name.trim(), color, goal.trim() || null) : onRename(dialog.folder, name.trim(), color, goal.trim() || null));
     return (
-      <Modal open title={dialog.kind === "create" ? "Thêm folder" : "Đổi tên folder"} onClose={onClose}
-        footer={<><Btn onClick={onClose}>Huỷ</Btn><Btn variant="primary" disabled={!name.trim()} onClick={submit}>{dialog.kind === "create" ? "Tạo folder" : "Lưu"}</Btn></>}>
-        <label className="text-sm font-medium text-ink">Tên folder
+      <Modal open title={dialog.kind === "create" ? "Tạo thư mục" : "Chỉnh sửa thư mục"} onClose={onClose}
+        footer={<><Btn onClick={onClose}>Huỷ</Btn><Btn variant="primary" disabled={!name.trim()} onClick={submit}>{dialog.kind === "create" ? "Tạo thư mục" : "Lưu"}</Btn></>}>
+        <label className="text-sm font-medium text-ink">Tên thư mục
           <input autoFocus value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Ví dụ: Cơ sở dữ liệu"
             className="mt-1.5 w-full rounded-lg border border-line bg-sheet px-3 py-2 font-normal outline-none focus:border-mirror" />
+        </label>
+        <label className="mt-4 block text-sm font-medium text-ink">Mục tiêu học <span className="font-normal text-muted">(không bắt buộc)</span>
+          <textarea value={goal} maxLength={500} rows={3} onChange={(e) => setGoal(e.target.value)} placeholder="Ví dụ: Ôn thi cuối kỳ chương 4–6, ưu tiên ví dụ có lời giải"
+            className="mt-1.5 w-full resize-none rounded-lg border border-line bg-sheet px-3 py-2 font-normal outline-none focus:border-mirror" />
+          <span className="mt-1 block text-xs font-normal text-muted">AI dùng mục tiêu này để chọn ví dụ và mức độ giải thích trong các phiên của thư mục. {goal.length}/500</span>
         </label>
         <p className="mt-4 text-sm font-medium text-ink">Màu</p>
         <div className="mt-2 flex gap-2">
@@ -241,8 +242,8 @@ function FolderDialog({ dialog, folders, error, onClose, onCreate, onRename, onD
   }
   if (dialog.kind === "delete") {
     return (
-      <Modal open title="Xóa folder" onClose={onClose} footer={<><Btn onClick={onClose}>Huỷ</Btn><Btn variant="danger" onClick={() => onDelete(dialog.folder)}>Xóa folder</Btn></>}>
-        <p className="text-sm text-ink">Xóa folder <b>{dialog.folder.name}</b>? Tài liệu bên trong <b>không bị xóa</b> mà chuyển sang “Chưa xếp thư mục”.</p>{err}
+      <Modal open title="Xoá thư mục" onClose={onClose} footer={<><Btn onClick={onClose}>Huỷ</Btn><Btn variant="danger" onClick={() => onDelete(dialog.folder)}>Xoá thư mục</Btn></>}>
+        <p className="text-sm text-ink">Xoá thư mục <b>{dialog.folder.name}</b>? Tài liệu bên trong <b>không bị xóa</b> mà chuyển sang “Chưa xếp thư mục”.</p>{err}
       </Modal>
     );
   }
