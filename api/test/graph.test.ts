@@ -15,6 +15,7 @@ import { createApp } from "../src/http/app";
 import { graphFixture, fixtureExtractor } from "../eval/graph-fixture";
 import { scripted, seqId, turnOut } from "./helpers";
 import { ProviderError } from "../src/providers/types";
+import { normalizeExtraction } from "../src/graph/langchain";
 
 const corpus = JSON.parse(readFileSync("eval/fixtures/csdl-chuan-hoa.json", "utf8"));
 const A = "11111111-1111-4111-8111-111111111111";
@@ -248,5 +249,17 @@ describe("Đợt 3 – HTTP: /api/graph", () => {
     expect(st.configured).toBe(false);
     const b = await app.request("/api/graph/build", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ document_ids: [A] }) }, {});
     expect(b.status).toBe(503);
+  });
+});
+
+describe("Đợt 4 – JSON trích xuất sai khoá không bị coi là đọc xong", () => {
+  it("khoá lạ → ok:false (trang được đọc lại); bọc một lớp → gỡ bọc; khoá đúng nhưng rỗng → ok:true", () => {
+    expect(normalizeExtraction({ khai_niem: [{ ten: "3NF" }] }).ok).toBe(false);
+    expect(normalizeExtraction({}).ok).toBe(false);
+    const wrapped = normalizeExtraction({ result: { concepts: [{ name: "Dạng chuẩn 3 (3NF)" }] } });
+    expect(wrapped.ok).toBe(true);
+    expect(wrapped.concepts[0]!.name).toBe("Dạng chuẩn 3 (3NF)");
+    expect(normalizeExtraction({ concepts: [], relations: [], mentions: [] }).ok).toBe(true);
+    expect(normalizeExtraction([{ concepts: [] }]).ok).toBe(false);
   });
 });
