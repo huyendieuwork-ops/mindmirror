@@ -5,8 +5,8 @@ export interface SessionItem { id: string; mode: Mode; topic: string; phase: str
 export interface SessionDetail { item: SessionItem; view: SessionView | null; assessment: Assessment | null }
 
 export const MODE_PAGE: Record<Mode, { title: string; short: string; path: string; subtitle: string }> = {
-  reunderstand: { title: "Kiểm tra kiến thức", short: "Kiểm tra kiến thức", path: "/check", subtitle: "Giải thích điều bạn hiểu. MindMirror sẽ phản biện để bạn đào sâu kiến thức." },
-  explore: { title: "Khám phá kiến thức", short: "Khám phá kiến thức", path: "/explore", subtitle: "Hỏi về bất kỳ chủ đề nào để hiểu rõ bản chất, kèm ví dụ và nguồn tham khảo." },
+  reunderstand: { title: "Kiểm tra hiểu biết", short: "Kiểm tra hiểu biết", path: "/check", subtitle: "Bạn tự trình bày điều mình hiểu, MindMirror đặt câu hỏi vào những điểm còn chưa chắc chắn." },
+  explore: { title: "Khám phá", short: "Khám phá", path: "/explore", subtitle: "Học từ đầu: MindMirror giải thích từ khái niệm cơ bản, kèm ví dụ và nguồn tham khảo." },
 };
 export const sessionPath = (s: { id: string; mode: Mode }) => `${MODE_PAGE[s.mode].path}/${s.id}`;
 
@@ -140,7 +140,7 @@ export function buildNotices(sessions: SessionItem[], details: SessionDetail[]):
   }
   const week = sessions.filter((s) => within(s.updatedAt, 7));
   if (week.length) {
-    n.push({ id: `week-${new Date().toISOString().slice(0, 10)}`, kind: "weekly", title: "Báo cáo học tập tuần này", body: `Bạn đã học ${week.length} phiên trong 7 ngày qua. Xem những nội dung nên ôn tập.`, at: week[0]!.updatedAt, href: "/reports" });
+    n.push({ id: `week-${new Date().toISOString().slice(0, 10)}`, kind: "weekly", title: "Tiến độ học tập tuần này", body: `Bạn đã học ${week.length} phiên trong 7 ngày qua. Xem những nội dung nên ôn tập.`, at: week[0]!.updatedAt, href: "/reports" });
   }
   return n.sort((a, b) => b.at.localeCompare(a.at));
 }
