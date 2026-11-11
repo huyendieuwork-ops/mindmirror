@@ -181,6 +181,8 @@ export interface LearningState {
   pendingModeSuggestion: SessionMode | null;
   /** Guardrail: lượt trước agent lặp lại câu hỏi cũ → lượt này phải đổi góc hỏi. */
   repeatedQuestion?: boolean;
+  /** Câu hỏi / điều người học gõ khi mở phiên (đầy đủ, ≤ 1000 ký tự) — dữ liệu cho prompt, không phải chỉ thị. topic là tiêu đề ngắn. */
+  request?: string | null;
   /** Khám phá "học từ đầu": dàn ý + điểm kiểm tra (null = Khám phá tự do như cũ). */
   path?: LearningPath | null;
 }
