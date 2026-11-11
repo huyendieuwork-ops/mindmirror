@@ -417,15 +417,17 @@ async function runTurnInner(
   let webTried = false;
   if (s.state.mode === "explore") {
     const docCitesValid = output.source_citations.filter((c) => validateCitation(c.source, c.quote, aliasMap(retrieved))).length;
+    // G3: model báo thiếu nguồn — bằng cờ needs_source HOẶC tự gắn nhãn "kiến thức chung" cho câu trả lời (model nhẹ hay quên cờ).
+    const g3Label = GENERAL_LABEL.test(output.assistant_text);
     const g = {
-      G3_needs_source: output.needs_source,
+      G3_needs_source: output.needs_source || g3Label,
       G4_no_doc_citation: docCitesValid === 0,
       G5_budget: !!deps.tools && !!deps.web && budget.used <= 1 && budget.used < budget.max,
     };
     if (g.G3_needs_source && g.G4_no_doc_citation && g.G5_budget) {
       webTried = true;
       const second = await step("web_search", async (span) => {
-        span.set({ conditions: g });
+        span.set({ conditions: g, g3_signal: output.needs_source ? "needs_source" : "general_label" });
         const query = (output.search_query?.trim() || `${s.state.topic}: ${text}`).slice(0, 200);
         // C1: đúng 1 lần mỗi lượt — gọi trực tiếp một lần ở đây, không mở cho model tự gọi.
         const r = await executeTool("search_trusted_sources", { query, subject: deps.subject ?? null }, toolCtx(span, "policy", 0));
@@ -642,6 +644,7 @@ async function runTurnInner(
   };
 }
 
+const GENERAL_LABEL = /kiến thức chung|chưa đối chiếu (với )?nguồn/i;
 const PAST_REF = /(lần trước|hôm trước|buổi trước|tuần trước|trước đây|đã học|ôn lại|lịch sử học|chỗ (em|mình|tôi) (hay )?(sai|vướng|yếu)|điểm yếu)/i;
 const DOC_REF = /(tài liệu|slide|giáo trình|bài giảng|sách|ghi chú|file|trang \d+|chương \d+)/i;
 

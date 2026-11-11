@@ -78,6 +78,7 @@ ${CHALLENGE[settings.challengeLevel]}
 - criterion: mã ngắn snake_case cho tiêu chí (vd "left_join_keeps_left_rows").
 - status "contradicted" = lời người học mâu thuẫn với kiến thức đúng; "unclear" = mơ hồ.
 - suspected_gaps: khái niệm đang hổng (tên ngắn, ổn định giữa các lượt). resolved_gaps: gap trước đó nay đã được người học tự diễn đạt đúng.
+- needs_source: true khi câu trả lời có ý kiến thức KHÔNG lấy từ <sources> (tức là bạn sẽ phải ghi "kiến thức chung"); false khi chỉ trò chuyện/hỏi lại hoặc mọi ý kiến thức đã có [S…].
 - ready_for_transfer: true khi người học đã giải thích đúng ý chính và nên thử tình huống mới.
 - suggest_mode_switch: chỉ đề xuất (vd đang Khám phá mà phát hiện hiểu nhầm → "reunderstand"); không tự chuyển.
 - Trường tuỳ chọn khi có tài liệu: observed_evidence[].criterion_id, observed_evidence[].source_ref {"source","quote"}, source_citations [{"source","quote"}] (source là S1.. hoặc W1..).

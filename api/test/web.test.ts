@@ -238,6 +238,18 @@ describe("Đợt 2 – search_trusted_sources trong workflow Khám phá", () => 
     expect(r.result.assistantText).toMatch(/chưa tìm thấy nguồn chính thống/);
   });
 
+  it("model quên cờ needs_source nhưng tự gắn nhãn \"kiến thức chung\" → vẫn tìm web (G3)", async () => {
+    const { store, retriever, web, prov, s } = await exploreSetup({ attach: true });
+    const { p, router } = scripted([
+      turnOut({ next_action: "acknowledge", assistant_text: "B-tree là cây cân bằng nhiều nhánh (kiến thức chung, chưa đối chiếu nguồn).", needs_source: false }),
+      turnOut({ next_action: "acknowledge", assistant_text: "Cây rất thấp [W1].", source_citations: [{ source: "W1", quote: "nên cây rất thấp" }] }),
+    ]);
+    const r = await runTurn(s, { text: "Chỉ mục B-tree hoạt động thế nào?" }, { core: router, id: seqId, retriever, tools: { store }, web });
+    expect(prov.calls).toBe(1);
+    expect(p.calls).toHaveLength(2);
+    expect(r.result.webCitations).toHaveLength(1);
+  });
+
   it("chế độ Kiểm tra kiến thức không bao giờ tìm web; model không được tự gọi công cụ này", async () => {
     const { store, retriever, web, prov } = await exploreSetup();
     const s = createSession({ userId: U, mode: "reunderstand", topic: "B-tree" }, { id: seqId });
