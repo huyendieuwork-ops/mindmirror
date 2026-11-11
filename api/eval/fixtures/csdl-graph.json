@@ -48,6 +48,12 @@
     { "id": "q07", "query": "Muốn hiểu 3NF thì cần ôn gì trước?", "focus": "Dạng chuẩn 3 (3NF)", "prerequisites": ["Dạng chuẩn 2 (2NF)", "Phụ thuộc bắc cầu"], "pages": [45, 44, 42] },
     { "id": "q08", "query": "Siêu khóa liên quan gì tới BCNF?", "focus": "Dạng chuẩn Boyce–Codd (BCNF)", "prerequisites": ["Siêu khóa", "Dạng chuẩn 3 (3NF)"], "pages": [46, 45] },
     { "id": "q09", "query": "Phụ thuộc hàm đầy đủ là gì?", "focus": "Phụ thuộc hàm đầy đủ", "prerequisites": ["Phụ thuộc hàm"], "pages": [42] },
-    { "id": "q10", "query": "Vì sao cột SoDienThoai chứa nhiều số trong một ô lại làm bảng không đạt 2NF?", "focus": "Dạng chuẩn 2 (2NF)", "prerequisites": ["Dạng chuẩn 1 (1NF)", "Phụ thuộc hàm đầy đủ", "Khóa chính"], "pages": [44, 43, 42] }
+    { "id": "q10", "query": "Vì sao cột SoDienThoai chứa nhiều số trong một ô lại làm bảng không đạt 2NF?", "focus": "Dạng chuẩn 2 (2NF)", "prerequisites": ["Dạng chuẩn 1 (1NF)", "Phụ thuộc hàm đầy đủ", "Khóa chính"], "pages": [44, 43, 42] },
+    { "id": "q11", "query": "Vì sao phải tách DANGKY thành SINHVIEN, MONHOC và DANGKY?", "focus": "Dạng chuẩn 2 (2NF)", "prerequisites": ["Dạng chuẩn 1 (1NF)", "Phụ thuộc hàm đầy đủ", "Khóa chính"], "pages": [44, 43, 42] },
+    { "id": "q12", "query": "Khi nào một bảng đạt BCNF?", "focus": "Dạng chuẩn Boyce–Codd (BCNF)", "prerequisites": ["Dạng chuẩn 3 (3NF)", "Siêu khóa"], "pages": [46, 45] },
+    { "id": "q13", "query": "Chỉ mục B-tree khác gì so với quét toàn bộ bảng?", "focus": "Chỉ mục B-tree", "prerequisites": ["Chỉ mục (Index)"], "pages": [52] },
+    { "id": "q14", "query": "TenKhoa phụ thuộc bắc cầu vào MaLop thì bảng LOP vi phạm gì?", "focus": "Dạng chuẩn 3 (3NF)", "prerequisites": ["Dạng chuẩn 2 (2NF)", "Phụ thuộc bắc cầu"], "pages": [45, 42] },
+    { "id": "q15", "query": "MaSV → TenSV có phải phụ thuộc hàm đầy đủ không?", "focus": "Phụ thuộc hàm đầy đủ", "prerequisites": ["Phụ thuộc hàm"], "pages": [42] },
+    { "id": "q16", "query": "Bảng có ô chứa nhiều số điện thoại thì đã xét 2NF được chưa?", "focus": "Dạng chuẩn 2 (2NF)", "prerequisites": ["Dạng chuẩn 1 (1NF)", "Phụ thuộc hàm đầy đủ", "Khóa chính"], "pages": [43, 44] }
   ]
 }

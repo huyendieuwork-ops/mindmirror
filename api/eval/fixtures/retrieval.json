@@ -12,5 +12,21 @@
   { "query": "tại sao chỉ mục làm chậm thao tác ghi", "gold_pages": [52] },
   { "query": "khách hàng không có đơn hàng có xuất hiện khi LEFT JOIN không", "gold_pages": [60] },
   { "query": "khi nào nên chấp nhận phi chuẩn hoá", "gold_pages": [47] },
-  { "query": "TenKhoa phụ thuộc MaLop thông qua MaKhoa", "gold_pages": [45] }
+  { "query": "TenKhoa phụ thuộc MaLop thông qua MaKhoa", "gold_pages": [45] },
+  { "query": "dị thường khi thêm, sửa, xoá là gì", "gold_pages": [41] },
+  { "query": "lưu trùng lặp dữ liệu gây mâu thuẫn như thế nào", "gold_pages": [41] },
+  { "query": "ký hiệu X → Y trong phụ thuộc hàm", "gold_pages": [42] },
+  { "query": "phụ thuộc hàm đầy đủ khác phụ thuộc một phần ra sao", "gold_pages": [42, 44] },
+  { "query": "cột SoDienThoai chứa 0901, 0912 vi phạm dạng chuẩn nào", "gold_pages": [43] },
+  { "query": "cách khắc phục vi phạm 1NF", "gold_pages": [43] },
+  { "query": "khi nào vi phạm 2NF có thể xảy ra", "gold_pages": [44] },
+  { "query": "khóa chính gồm nhiều thuộc tính MaSV, MaMH", "gold_pages": [44] },
+  { "query": "tách LOP thành LOP và KHOA để làm gì", "gold_pages": [45] },
+  { "query": "BCNF chặt hơn 3NF như thế nào", "gold_pages": [46] },
+  { "query": "nhiều khóa ứng viên chồng lên nhau", "gold_pages": [46] },
+  { "query": "phép phân rã không sinh thêm bộ giả", "gold_pages": [47] },
+  { "query": "bảo toàn phụ thuộc hàm khi tách bảng", "gold_pages": [47] },
+  { "query": "chỉ mục B-tree hợp với truy vấn nào", "gold_pages": [52] },
+  { "query": "chỉ mục băm dùng cho so sánh bằng", "gold_pages": [52] },
+  { "query": "INNER JOIN chỉ giữ dòng khớp", "gold_pages": [60] }
 ]
