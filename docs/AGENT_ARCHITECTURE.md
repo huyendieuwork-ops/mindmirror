@@ -182,14 +182,16 @@ Mọi nút đều mang `userId`; mọi câu đọc/ghi đều có điều kiện
 
 ```bash
 cd api
-npm test                                  # 165 unit/integration test
-npm run eval:agent                        # 63 ca offline (11 ca nguồn web, 11 ca đồ thị), deterministic, 0 API call
-npm run eval:graph                        # so sánh RAG thường vs GraphRAG trên 10 câu (offline)
+npm test                                  # 166 unit/integration test
+npm run eval:agent                        # 80 ca (68 offline, deterministic, 0 API call) chia 8 nhóm nghiệm thu
 npm run eval:agent -- --live --max-calls 24   # +12 ca với Gemini thật (cần GEMINI_API_KEY; ts-03/ts-04 tìm web thật), giãn cách 4.2s
-npm run eval:retrieval                    # 14 câu truy xuất (hit@k, MRR)
+npm run eval:graph                        # RAG thường vs GraphRAG: 16 câu × 3 lần (hit@4, MRR, recall khái niệm nền, token, p50/p95)
+npm run eval -- --suite retrieval         # 30 câu truy xuất (hit@k, MRR)
 npm run eval -- --suite judgment --runs 3 # 14 ca chấm × 3 lần (κ, over-claim, nhất quán) — cần key
+npx tsx scripts/neo4j-check.ts            # Neo4j Aura thật (cần NEO4J_*): lược đồ, userId, cạnh xuyên tài khoản, nạp lại, xoá
 ```
-Báo cáo: `api/eval/reports/agent-eval-<thời gian>.md|json`. CI của mỗi PR chạy offline (chặn nếu < 90%) và live (chỉ báo cáo, khi repo có secret `GEMINI_API_KEY`).
+**8 nhóm nghiệm thu (Đợt 4, `categoryOf()` trong `scripts/agent-eval.ts`; nhãn + nhóm P0 khai báo trong `eval/agent-cases.json`):** guardrail 18 · phân quyền 7 · trích dẫn + truy xuất 10 · quy trình 6 · Socratic 8 (live) · chọn công cụ 7 · nguồn chính thống 13 · GraphRAG 11 — tổng 80. **Cổng CI (`--ci`):** nhóm P0 (guardrail, phân quyền, trích dẫn, nguồn chính thống) phải đạt **100%** ca offline; các nhóm còn lại ≥ 90%. Thử cố ý làm hỏng gt-01 → CI thoát mã 1 ("nhóm P0 chưa đạt 100%: permission 6/7"). Ca live chỉ báo cáo, không chặn merge (hết hạn mức → ghi "bỏ qua").
+Báo cáo: `api/eval/reports/agent-eval-<thời gian>.md|json` (có bảng theo 8 nhóm), `graph-eval-<thời gian>.md`. CI của mỗi PR chạy offline (cổng P0 100% / còn lại 90%), kiểm Neo4j thật và live (chỉ báo cáo, khi repo có secret).
 
 **Kết quả offline thật — 01/11/2026, nhánh `agent-mvp`**
 

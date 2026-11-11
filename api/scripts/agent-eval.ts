@@ -49,7 +49,21 @@ for (const f of ["wrangler.toml", ".dev.vars"]) if (existsSync(f))
 for (const [k, v] of Object.entries(process.env)) if (v && /^(GEMINI|MODEL_|TRACE_)/.test(k)) (env as any)[k] = v;
 
 const corpus = JSON.parse(readFileSync("eval/fixtures/csdl-chuan-hoa.json", "utf8"));
-const { cases } = JSON.parse(readFileSync("eval/agent-cases.json", "utf8")) as { cases: any[] };
+const casesFile = JSON.parse(readFileSync("eval/agent-cases.json", "utf8")) as { cases: any[]; categories?: Record<string, string>; p0_categories?: string[] };
+const { cases } = casesFile;
+/** 8 nhóm nghiệm thu (Đợt 4) suy ra từ mã ca — giữ agent-cases.json gọn, một nguồn quy ước. */
+function categoryOf(id: string): string {
+  if (/^(gi|ga)-/.test(id)) return "guardrail";
+  if (/^gt-/.test(id)) return "permission";
+  if (/^(rc|rr)-/.test(id)) return "citation";
+  if (/^tl-/.test(id) || ["wf-07", "wf-08", "ts-01", "ts-02"].includes(id)) return "tool_selection";
+  if (/^wf-/.test(id)) return "workflow";
+  if (/^sl-/.test(id)) return "socratic";
+  if (/^(wl|ws)-/.test(id) || ["ts-03", "ts-04"].includes(id)) return "trusted_sources";
+  if (/^gr-/.test(id)) return "graphrag";
+  return "other";
+}
+for (const c of cases) c.category ??= categoryOf(c.id);
 const OWNER = "00000000-0000-4000-8000-0000000000a1";
 const OTHER = "00000000-0000-4000-8000-0000000000b2";
 let idn = 0;
@@ -69,7 +83,7 @@ const scriptedRouter = (script: any[], onCall?: (c: CallLog) => void) => {
   return { p, router: new ModelRouter(p, null, { sleep: async () => {}, onCall }) };
 };
 
-type Row = { id: string; group: string; type: string; pass: boolean | null; detail: string; criteria: string; ms: number; tokens?: number; calls?: number };
+type Row = { id: string; group: string; category: string; type: string; pass: boolean | null; detail: string; criteria: string; ms: number; tokens?: number; calls?: number };
 const rows: Row[] = [];
 
 // ---------------- offline evaluators ----------------
@@ -86,7 +100,7 @@ async function evalToolPermission(c: any): Promise<[boolean, string]> {
   const { store, document, retriever } = await library(OWNER);
   const argsJson = JSON.parse(JSON.stringify(c.args).replace(/"\$DOC"/g, JSON.stringify(document.id)));
   const userId = c.as === "other" ? OTHER : OWNER;
-  const r = await executeTool(c.tool, argsJson, { userId, store, retriever, initiator: c.initiator ?? "model" });
+  const r = await executeTool(c.tool, argsJson, { userId, store, retriever, graph: new MemoryGraphStore(), initiator: c.initiator ?? "model" });
   if (c.expect.error) return [!r.ok && r.error.code === c.expect.error, r.ok ? "ok (mong đợi lỗi)" : `error=${r.error.code}`];
   const n = r.ok ? ((r.data as any).results?.length ?? -1) : -1;
   return [r.ok && n === c.expect.results, r.ok ? `ok results=${n}` : `error=${r.error.code}`];
@@ -434,6 +448,39 @@ async function evalGraphScenario(c: any): Promise<[boolean, string, { tokens: nu
   return [false, "kịch bản không xác định", z];
 }
 
+// ---------------- Đợt 4: chọn công cụ đúng lúc (offline) ----------------
+async function evalToolChoice(c: any): Promise<[boolean, string, { tokens: number; calls: number }]> {
+  switch (c.scenario) {
+    case "doc_ref_autosearch": {
+      const { store, retriever } = await library();
+      const { p, router } = scriptedRouter([(req: any) => {
+        const m = /<source id="(S\d+)"[^>]*page="44"/.exec(req.user);
+        return turn({ assistant_text: `Slide của bạn nói 2NF cần phụ thuộc đầy đủ [${m?.[1]}]. Bạn thử áp vào DANGKY?`, source_citations: m ? [{ source: m[1], quote: "phụ thuộc đầy đủ vào khóa chính" }] : [] });
+      }]);
+      const s0 = createSession({ userId: OWNER, mode: "reunderstand", topic: "2NF" }, { id: seqId });
+      const r = await runTurn(s0, { text: "Slide của em nói gì về 2NF nhỉ?" }, { core: router, id: seqId, retriever, tools: { store } });
+      const auto = r.result.toolsUsed?.some((t) => t.name === "search_learning_materials" && t.initiator === "policy" && t.ok);
+      const ok = !!auto && r.result.citations.length === 1 && r.result.citations[0]!.page === 44;
+      return [ok, `tự tìm=${!!auto}, trích dẫn=${r.result.citations.map((x) => `tr.${x.page}`)}`, { tokens: 0, calls: p.calls.length }];
+    }
+    case "graph_not_without_docs":
+    case "graph_not_first_turn": {
+      const g = await graphLib();
+      const withDocs = c.scenario === "graph_not_first_turn";
+      const stuck = turn({ next_action: "acknowledge", assistant_text: "Bạn thử nghĩ lại xem?", suspected_gaps: ["Dạng chuẩn 3 (3NF)"] });
+      const { p, router } = scriptedRouter([stuck, stuck, stuck]);
+      let s = createSession({ userId: OWNER, mode: "explore", topic: "Chuẩn hoá", documentIds: withDocs ? [g.document.id] : [] }, { id: seqId });
+      const deps: EngineDeps = { core: router, id: seqId, retriever: g.retriever, tools: { store: g.store }, graph: g.graph };
+      const texts = withDocs ? ["3NF là gì nhỉ?"] : ["3NF là gì nhỉ?", "vẫn chưa hiểu 3NF", "3NF khó quá"];
+      const used: string[] = [];
+      for (const t of texts) { const r = await runTurn(s, { text: t }, deps); s = r.session; used.push(...(r.result.toolsUsed ?? []).map((x) => x.name)); }
+      const ok = !used.includes("explore_concept_graph") && !p.calls.some((x) => x.user.includes("<concept_graph"));
+      return [ok, `${withDocs ? "lượt đầu, có tài liệu" : "3 lượt vướng, không tài liệu"} → công cụ=[${[...new Set(used)]}]`, { tokens: 0, calls: p.calls.length }];
+    }
+  }
+  return [false, "kịch bản không xác định", { tokens: 0, calls: 0 }];
+}
+
 // ---------------- live evaluators (model thật, có ngân sách) ----------------
 let liveCalls = 0;
 let lastCallAt = 0;
@@ -513,10 +560,11 @@ for (const c of cases) {
     else if (c.type === "web_link") [pass, detail] = evalWebLink(c);
     else if (c.type === "web_scenario") [pass, detail, extra] = await evalWebScenario(c);
     else if (c.type === "graph_scenario") [pass, detail, extra] = await evalGraphScenario(c);
+    else if (c.type === "tool_choice") [pass, detail, extra] = await evalToolChoice(c);
   } catch (e) {
     pass = false; detail = `lỗi: ${(e as Error).message.slice(0, 160)}`;
   }
-  rows.push({ id: c.id, group: c.group, type: c.type, pass, detail, criteria: c.criteria, ms: extra.ms ?? Date.now() - t0, tokens: extra.tokens, calls: extra.calls });
+  rows.push({ id: c.id, group: c.group, category: c.category ?? c.group, type: c.type, pass, detail, criteria: c.criteria, ms: extra.ms ?? Date.now() - t0, tokens: extra.tokens, calls: extra.calls });
   console.log(`${pass === null ? "⏭️ " : pass ? "✅" : "❌"} ${c.id.padEnd(6)} ${String(c.group).padEnd(10)} ${detail}`);
 }
 
@@ -528,11 +576,23 @@ const summary = groups.map((g) => {
 });
 const offlineRows = rows.filter((r) => cases.find((c) => c.id === r.id)!.offline);
 const offlineRate = offlineRows.filter((r) => r.pass).length / offlineRows.length;
+// Đợt 4 (EV-01/EV-02): 8 nhóm nghiệm thu; nhóm P0 phải đạt 100% ca offline, phần còn lại ≥ 90%.
+const CATEGORY_LABEL: Record<string, string> = (casesFile as any).categories ?? {};
+const P0: string[] = (casesFile as any).p0_categories ?? [];
+const byCategory = Object.keys(CATEGORY_LABEL).map((k) => {
+  const rs = rows.filter((r) => r.category === k);
+  const off = rs.filter((r) => cases.find((c) => c.id === r.id)!.offline);
+  const ran = rs.filter((r) => r.pass !== null);
+  return { category: k, label: CATEGORY_LABEL[k], p0: P0.includes(k), total: rs.length, offline: off.length, offlinePassed: off.filter((r) => r.pass).length, ran: ran.length, passed: ran.filter((r) => r.pass).length };
+});
+const p0Fail = byCategory.filter((x) => x.p0 && x.offlinePassed < x.offline);
+const restOff = offlineRows.filter((r) => !P0.includes(r.category));
+const restRate = restOff.length ? restOff.filter((r) => r.pass).length / restOff.length : 1;
 const inputRows = rows.filter((r) => r.type === "input");
 const liveRows = rows.filter((r) => r.pass !== null && !cases.find((c) => c.id === r.id)!.offline);
 const report = {
   startedAt, finishedAt: new Date().toISOString(), live: LIVE, model: LIVE ? env.MODEL_CORE ?? "gemini-3.8-flash" : "scripted (offline)",
-  totalCases: rows.length, offlineCases: offlineRows.length, offlinePassRate: offlineRate, summary,
+  totalCases: rows.length, offlineCases: offlineRows.length, offlinePassRate: offlineRate, summary, byCategory, gate: { p0Categories: P0, p0Failed: p0Fail.map((x) => x.category), nonP0OfflineRate: restRate },
   liveUsage: { calls: liveCalls, tokens: liveRows.reduce((a, r) => a + (r.tokens ?? 0), 0), latencyMs: { p50: percentile(liveRows.map((r) => r.ms), 50), p95: percentile(liveRows.map((r) => r.ms), 95) } },
   offlineTokensEstimated: offlineRows.reduce((a, r) => a + (r.tokens ?? 0), 0),
   inputGuard: { cases: inputRows.length, passed: inputRows.filter((r) => r.pass).length },
@@ -546,6 +606,9 @@ const md = [
   `Chế độ: ${LIVE ? `offline + live (${report.model}, ${liveCalls} lời gọi)` : "offline (deterministic, không gọi API)"}`, "",
   "| Nhóm | Số ca | Đã chạy | Đạt | Tỉ lệ |", "|---|---|---|---|---|",
   ...summary.map((s) => `| ${s.group} | ${s.total} | ${s.ran} | ${s.passed} | ${s.rate === null ? "—" : `${Math.round(s.rate * 100)}%`} |`), "",
+  "**8 nhóm nghiệm thu (Đợt 4)** — nhóm P0 phải đạt 100% ca offline, nhóm khác ≥ 90%:", "",
+  "| Nhóm nghiệm thu | P0 | Số ca | Offline đạt | Đã chạy | Đạt |", "|---|---|---|---|---|---|",
+  ...byCategory.map((x) => `| ${x.label} | ${x.p0 ? "✔" : ""} | ${x.total} | ${x.offlinePassed}/${x.offline} | ${x.ran} | ${x.passed} |`), "",
   "| Ca | Nhóm | Kết quả | Chi tiết | Tiêu chí |", "|---|---|---|---|---|",
   ...rows.map((r) => `| ${r.id} | ${r.group} | ${r.pass === null ? "chưa chạy" : r.pass ? "ĐẠT" : "TRƯỢT"} | ${r.detail.replace(/\|/g, "/")} | ${r.criteria} |`),
 ].join("\n");
@@ -553,4 +616,9 @@ writeFileSync(`eval/reports/agent-eval-${stamp}.md`, md);
 console.log(`\n${summary.map((s) => `${s.group}: ${s.passed}/${s.ran}${s.ran < s.total ? ` (chưa chạy ${s.total - s.ran})` : ""}`).join(" · ")}`);
 console.log(`offline: ${Math.round(offlineRate * 100)}% (${offlineRows.filter((r) => r.pass).length}/${offlineRows.length})${LIVE ? ` · live: ${liveRows.filter((r) => r.pass).length}/${liveRows.length}, ${liveCalls} lời gọi` : ""}`);
 console.log(`📄 eval/reports/agent-eval-${stamp}.md`);
-if (flag("ci") && offlineRate < GATE_OFFLINE) { console.log(`⛔ offline ${Math.round(offlineRate * 100)}% < ${GATE_OFFLINE * 100}%`); process.exit(1); }
+console.log(byCategory.map((x) => `${x.p0 ? "[P0] " : ""}${x.category} ${x.offlinePassed}/${x.offline}`).join(" · "));
+if (flag("ci") && (p0Fail.length || restRate < GATE_OFFLINE)) {
+  if (p0Fail.length) console.log(`⛔ nhóm P0 chưa đạt 100%: ${p0Fail.map((x) => `${x.category} ${x.offlinePassed}/${x.offline}`).join(", ")}`);
+  if (restRate < GATE_OFFLINE) console.log(`⛔ nhóm còn lại ${Math.round(restRate * 100)}% < ${GATE_OFFLINE * 100}%`);
+  process.exit(1);
+}

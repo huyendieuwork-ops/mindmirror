@@ -170,6 +170,34 @@ describe("Đợt 3 – GraphRAG khi trả lời", () => {
   });
 });
 
+describe("Đợt 4 – NEO-06: Neo4j lỗi thì hệ thống vẫn chạy", () => {
+  const broken = () => {
+    const g = new MemoryGraphStore();
+    const boom = async () => { throw Object.assign(new Error("neo4j down"), { code: "network" }); };
+    return Object.assign(g, { ping: boom, neighborhood: boom, view: boom, extractedPages: boom, write: boom });
+  };
+  it("phiên Khám phá vướng 2 lượt vẫn trả lời (hạ về RAG), trace ghi graph:unavailable; status báo connected=false; build 503", async () => {
+    const s = await setup();
+    const graph = broken();
+    let sess = createSession({ userId: A, mode: "explore", topic: "Chuẩn hoá", documentIds: [s.document.id] }, { id: seqId });
+    const stuck = turnOut({ next_action: "acknowledge", assistant_text: "Bạn thử nghĩ lại xem?", suspected_gaps: ["3NF"] });
+    const { p, router } = scripted([stuck, stuck, stuck]);
+    const deps = { core: router, id: seqId, retriever: s.retriever, tools: { store: s.store }, graph };
+    let last: any;
+    for (const t of ["3NF?", "chưa hiểu 3NF", "vẫn chưa"]) { last = await runTurn(sess, { text: t }, deps); sess = last.session; }
+    expect(last.result.assistantText.length).toBeGreaterThan(0);
+    expect(last.result.guardrails).toContain("graph:unavailable");
+    expect(p.calls[2]!.user).toContain("<sources");
+    const app = createApp({ store: s.store, graph, authenticate: async () => A });
+    const st = await (await app.request("/api/graph/status", {}, {})).json() as any;
+    expect(st).toMatchObject({ configured: true, connected: false });
+    const b = await app.request("/api/graph/build", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ document_ids: [s.document.id] }) }, {});
+    expect(b.status).toBe(503);
+    const v = await app.request(`/api/graph?document_ids=${s.document.id}`, {}, {});
+    expect(v.status).toBe(503);
+  });
+});
+
 describe("Đợt 3 – Neo4j Query API (HTTP)", () => {
   it("đổi URI Aura sang endpoint HTTPS; mọi câu lệnh gửi kèm userId; lỗi trả mã rõ ràng", async () => {
     expect(queryEndpoint("neo4j+s://abcd1234.databases.neo4j.io")).toBe("https://abcd1234.databases.neo4j.io/db/neo4j/query/v2");
