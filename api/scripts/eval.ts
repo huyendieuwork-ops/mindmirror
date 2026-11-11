@@ -277,5 +277,5 @@ console.log(`\n📄 eval/reports/report-${stamp}.json`);
 if (failures.length) console.log(`\n⛔ Trượt ngưỡng:\n - ${failures.join("\n - ")}`);
 const infra = (report as any).judgment?.errors ?? 0;
 if (failures.length && infra >= 10) console.log(`⚠️  ${infra} lời gọi model lỗi (thường là 429 hết hạn mức) — kết quả lần này KHÔNG phản ánh chất lượng chấm; chạy lại khi hạn mức reset.`);
-else console.log("\n✅ Đạt mọi ngưỡng.");
+else if (!failures.length) console.log("\n✅ Đạt mọi ngưỡng.");
 if (flag("ci") && failures.length) process.exit(1);
