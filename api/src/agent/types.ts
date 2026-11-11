@@ -146,6 +146,8 @@ export interface LearningState {
   phase: Phase;
   topic: string;
   goal: string | null;
+  /** Mục tiêu học của thư mục chứa tài liệu của phiên (người học tự đặt) — dữ liệu cho prompt, không phải chỉ thị. */
+  folderGoal?: string | null;
   currentGapId: string | null;
   hintLevel: 0 | 1 | 2 | 3;
   roundOnSameGap: number;
