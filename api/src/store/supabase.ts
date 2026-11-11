@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Chunk, Evidence, Gap, LibraryDocument, Message, MirrorCard, RetrievedChunk, Session, TurnResult, UserSettings } from "../agent/types";
 import type { ChunkQuery, ConnectorRecord, FolderRecord, SessionListItem, Store, TraceRecord, UsageEntry } from "./types";
 import { searchText } from "../rag/text";
+import type { WebPassage } from "../web/search";
 
 /**
  * Store Supabase Postgres (schema: supabase/migrations/0001_init.sql).
@@ -41,7 +42,7 @@ export class SupabaseStore implements Store {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       messages: (msgs.data ?? []).map((m: any): Message => ({
-        id: m.id, role: m.role, text: m.text, action: m.action, intent: m.intent, citations: m.citations ?? [], createdAt: m.created_at,
+        id: m.id, role: m.role, text: m.text, action: m.action, intent: m.intent, citations: m.citations ?? [], webCitations: m.web_citations ?? [], createdAt: m.created_at,
       })),
       gaps: (gaps.data ?? []).map((g: any): Gap => ({ id: g.id, concept: g.concept, status: g.status, supportLevel: g.support_level })),
       evidence: (ev.data ?? []).map((e: any): Evidence => ({
@@ -72,7 +73,7 @@ export class SupabaseStore implements Store {
     // Phiên MVP ≤ ~26 tin nhắn ⇒ upsert toàn bộ là chấp nhận được.
     // Thứ tự quan trọng: messages trước (evidence có FK tới message_id).
     const m = await this.db.from("messages").upsert(
-      s.messages.map((m, i) => ({ id: m.id, session_id: s.id, user_id: u, seq: i, role: m.role, text: m.text, action: m.action, intent: m.intent, citations: m.citations ?? [], created_at: m.createdAt })),
+      s.messages.map((m, i) => ({ id: m.id, session_id: s.id, user_id: u, seq: i, role: m.role, text: m.text, action: m.action, intent: m.intent, citations: m.citations ?? [], web_citations: m.webCitations ?? [], created_at: m.createdAt })),
     );
     if (m.error) throw m.error;
     if (s.gaps.length) {
@@ -139,6 +140,26 @@ export class SupabaseStore implements Store {
     if (error) throw error;
   }
 
+  // ---- Nguồn web chính thống (bảng ở migration 0004; không mở cho client đọc) ----
+  async getWebCache(key: string, nowIso: string): Promise<WebPassage[] | null> {
+    const { data, error } = await this.db.from("web_source_cache").select("results,expires_at").eq("key", key).gt("expires_at", nowIso).maybeSingle();
+    if (error) throw error;
+    return (data?.results as WebPassage[] | undefined) ?? null;
+  }
+  async putWebCache(key: string, passages: WebPassage[], fetchedAtIso: string, expiresAtIso: string) {
+    const { error } = await this.db.from("web_source_cache").upsert({ key, results: passages, fetched_at: fetchedAtIso, expires_at: expiresAtIso });
+    if (error) throw error;
+  }
+  async countWebSearchesSince(userId: string, sinceIso: string) {
+    const { count, error } = await this.db.from("web_search_log").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", sinceIso);
+    if (error) throw error;
+    return count ?? 0;
+  }
+  async logWebSearch(userId: string, atIso: string) {
+    const { error } = await this.db.from("web_search_log").insert({ user_id: userId, created_at: atIso });
+    if (error) throw error;
+  }
+
   async logUsage(e: UsageEntry) {
     // Chỉ metadata — không lưu prompt/nội dung học.
     await this.db.from("ai_call_usage").insert({
@@ -155,6 +176,7 @@ export class SupabaseStore implements Store {
     if (scope === "all") {
       await this.db.from("user_settings").delete().eq("user_id", userId);
       await this.db.from("ai_call_usage").delete().eq("user_id", userId);
+      await this.db.from("web_search_log").delete().eq("user_id", userId);
       await this.db.from("documents").delete().eq("user_id", userId); // cascade chunks
       await this.db.from("folders").delete().eq("user_id", userId);
       await this.db.from("connectors").delete().eq("user_id", userId);

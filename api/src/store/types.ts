@@ -1,4 +1,5 @@
 import type { Chunk, LibraryDocument, MirrorCard, RetrievedChunk, Session, TurnResult, UserSettings } from "../agent/types";
+import type { WebPassage } from "../web/search";
 
 export interface SessionListItem {
   id: string;
@@ -93,6 +94,14 @@ export interface Store {
   getChunks?(userId: string, ids: string[]): Promise<RetrievedChunk[]>;
   /** Tìm kiếm lai (từ khoá + vector) CHỈ trong tài liệu của userId. */
   searchChunks(userId: string, documentIds: string[], q: ChunkQuery, k: number): Promise<RetrievedChunk[]>;
+
+  // ---- Nguồn web chính thống (Đợt 2, tuỳ chọn) ----
+  /** Kết quả đã kiểm tra còn hạn cho khoá băm (dùng chung mọi người dùng — nội dung công khai). */
+  getWebCache?(key: string, nowIso: string): Promise<WebPassage[] | null>;
+  putWebCache?(key: string, passages: WebPassage[], fetchedAtIso: string, expiresAtIso: string): Promise<void>;
+  /** Số lượt gọi dịch vụ tìm kiếm ngoài của người dùng từ thời điểm sinceIso (hạn mức theo ngày). */
+  countWebSearchesSince?(userId: string, sinceIso: string): Promise<number>;
+  logWebSearch?(userId: string, atIso: string): Promise<void>;
 
   // ---- MCP connectors ----
   saveConnector(c: ConnectorRecord): Promise<void>;

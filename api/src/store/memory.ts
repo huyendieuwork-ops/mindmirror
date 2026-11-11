@@ -1,6 +1,7 @@
 import type { Chunk, LibraryDocument, MirrorCard, RetrievedChunk, Session, TurnResult, UserSettings } from "../agent/types";
 import type { ChunkQuery, ConnectorRecord, FolderRecord, SessionListItem, Store, TraceRecord, UsageEntry } from "./types";
 import { bm25Rank, rrf, vectorRank } from "../rag/hybrid";
+import type { WebPassage } from "../web/search";
 
 /** Store trong bộ nhớ — cho test, CLI và `wrangler dev` khi chưa nối Supabase. */
 export class MemoryStore implements Store {
@@ -14,6 +15,20 @@ export class MemoryStore implements Store {
   connectors = new Map<string, ConnectorRecord>();
   folders = new Map<string, FolderRecord>();
   traces: TraceRecord[] = [];
+  webCache = new Map<string, { passages: WebPassage[]; expiresAt: string }>();
+  webSearches: { userId: string; at: string }[] = [];
+
+  async getWebCache(key: string, nowIso: string) {
+    const c = this.webCache.get(key);
+    return c && c.expiresAt > nowIso ? structuredClone(c.passages) : null;
+  }
+  async putWebCache(key: string, passages: WebPassage[], _fetchedAt: string, expiresAt: string) {
+    this.webCache.set(key, { passages: structuredClone(passages), expiresAt });
+  }
+  async countWebSearchesSince(userId: string, sinceIso: string) {
+    return this.webSearches.filter((x) => x.userId === userId && x.at >= sinceIso).length;
+  }
+  async logWebSearch(userId: string, atIso: string) { this.webSearches.push({ userId, at: atIso }); }
 
   async createSession(s: Session) { this.sessions.set(s.id, structuredClone(s)); }
   async getSession(id: string, userId: string) {

@@ -18,3 +18,22 @@ describe("detectIntent (luật, 0 API call)", () => {
     expect(detectIntent("Thôi được, vậy LEFT JOIN giữ hàng bên trái.")).toBeNull();
   });
 });
+
+import { decide } from "../src/agent/policy";
+import { createSession } from "../src/agent/engine";
+
+describe("Khám phá – lượt đầu (Đợt 2)", () => {
+  const withMsg = (text: string) => {
+    const s = createSession({ userId: "11111111-1111-4111-8111-111111111111", mode: "explore", topic: "CSDL" });
+    s.messages.push({ id: "u1", role: "user", text, action: null, intent: null, createdAt: s.createdAt });
+    return s;
+  };
+  it("người học hỏi câu cụ thể → được trả lời luôn (explain_foundation)", () => {
+    const d = decide(withMsg("Chỉ mục B-tree hoạt động thế nào?"), null);
+    expect(d.kind === "llm" && d.allowedActions.includes("explain_foundation")).toBe(true);
+  });
+  it("lời chào/chưa rõ ý → vẫn làm rõ hoặc gợi hướng", () => {
+    const d = decide(withMsg("mình muốn tìm hiểu thêm"), null);
+    expect(d.kind === "llm" && d.allowedActions).toEqual(["ask_clarification", "suggest_directions", "acknowledge"]);
+  });
+});

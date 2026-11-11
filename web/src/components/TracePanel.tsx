@@ -5,10 +5,12 @@ const STEP: Record<string, string> = {
   input_validation: "Kiểm tra đầu vào", intent_understanding: "Hiểu ý định", policy_decision: "Chọn bước tiếp theo",
   evidence_retrieval: "Truy xuất bằng chứng", knowledge_analysis: "Phân tích & đặt câu hỏi", misconception_detection: "Phát hiện hiểu lầm",
   output_validation: "Kiểm duyệt đầu ra", reassessment: "Đánh giá lại", session_summary: "Tổng kết phiên",
+  web_search: "Tìm nguồn chính thống",
 };
 const TOOL: Record<string, string> = {
   search_learning_materials: "Tìm trong thư viện", retrieve_document_context: "Lấy ngữ cảnh tài liệu phiên",
   get_learning_history: "Xem lịch sử học", get_knowledge_gaps: "Xem lỗ hổng đã ghi", save_session_summary: "Lưu thẻ tổng kết",
+  search_trusted_sources: "Tìm nguồn web chính thống",
 };
 const WHO: Record<string, string> = { model: "model tự gọi", policy: "workflow gọi", mcp: "qua MCP" };
 
@@ -36,7 +38,7 @@ export default function TracePanel({ sessionId, version }: { sessionId: string; 
               {s.workflow?.length ? (
                 <ul className="mt-1.5 flex flex-wrap gap-1">
                   {s.workflow.map((w, i) => (
-                    <li key={i} className={`rounded-md px-1.5 py-0.5 text-[11px] ${w.status === "error" ? "bg-rust/10 text-rust" : "bg-paper text-muted"}`}>{STEP[w.step] ?? w.step} {w.ms}ms</li>
+                    <li key={i} className={`rounded-md px-1.5 py-0.5 text-[11px] ${w.status === "error" ? "bg-rust/10 text-rust" : w.status === "skipped" ? "bg-paper text-muted/60 line-through" : "bg-paper text-muted"}`}>{STEP[w.step] ?? w.step} {w.ms}ms</li>
                   ))}
                 </ul>
               ) : null}
@@ -47,7 +49,13 @@ export default function TracePanel({ sessionId, version }: { sessionId: string; 
                   ))}
                 </ul>
               ) : null}
-              {s.retrieval?.length ? <p className="mt-1 text-muted">📚 Truy xuất: {s.retrieval.map((r) => `${r.hits} đoạn (${r.method})`).join(", ")}</p> : null}
+              {s.retrieval?.filter((r) => r.purpose !== "web").length ? <p className="mt-1 text-muted">📚 Truy xuất: {s.retrieval.filter((r) => r.purpose !== "web").map((r) => `${r.hits} đoạn (${r.method})`).join(", ")}</p> : null}
+              {s.web?.map((w, i) => (
+                <div key={i} className="mt-1 text-muted">
+                  🌐 Nguồn web ({w.fromCache ? "lấy từ bộ nhớ lưu" : w.method}){w.rejected ? ` · loại ${w.rejected} link ngoài danh sách/lỗi` : ""}{!w.pages.length ? " · không có trang phù hợp" : ""}
+                  {w.pages.length > 0 && <ul className="ml-4 list-disc text-[11px]">{[...new Set(w.pages)].map((u) => <li key={u} className="break-all">{(() => { try { return decodeURI(u); } catch { return u; } })()}</li>)}</ul>}
+                </div>
+              ))}
               {s.guardrails?.length ? <p className="mt-1 text-[#B7791F]">🛡️ Guardrail: {s.guardrails.join(", ")}</p> : null}
               {s.errors.length > 0 && <p className="mt-1 text-rust">Lỗi: {s.errors.map((e) => `${e.span} (${e.error})`).join(", ")}</p>}
             </li>

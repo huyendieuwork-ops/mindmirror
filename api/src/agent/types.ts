@@ -111,6 +111,14 @@ export interface Citation {
   quote: string;
 }
 
+/** Trích dẫn nguồn web chính thống (Đợt 2): url/tên trang lấy từ dữ liệu trang code đã tải, KHÔNG từ lời model. */
+export interface WebCitation {
+  url: string;
+  siteName: string;
+  title: string;
+  quote: string;
+}
+
 /** Tiêu chí kiểm tra rút ra TỪ tài liệu (không phải câu hỏi chung chung). */
 export interface Criterion {
   id: string;             // "C1", "C2"...
@@ -159,6 +167,7 @@ export interface Message {
   action: Action | null;
   intent: UserIntent | null;
   citations?: Citation[];
+  webCitations?: WebCitation[];
   createdAt: string;
 }
 
@@ -234,6 +243,10 @@ export interface TurnResult {
   isFinished: boolean;
   card?: MirrorCard;
   citations: Citation[];
+  /** Trích dẫn nguồn web ([W1], [W2]...) — tách khỏi trích dẫn tài liệu. */
+  webCitations?: WebCitation[];
+  /** Bậc nguồn của câu trả lời: tài liệu người học → nguồn chính thống → kiến thức chung. */
+  sourceTier?: "documents" | "web" | "general" | null;
   traceId: string | null;
   modelInfo: { provider: string; model: string } | null;
   /** Công cụ đã chạy trong lượt (tên + ai khởi tạo + thành công?) — không chứa nội dung. */

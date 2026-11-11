@@ -7,7 +7,8 @@ export type Mode = "explore" | "reunderstand";
 export type Intent = "hint" | "show_answer" | "explain_more" | "give_example" | "try" | "skip" | "change_topic" | "switch_mode" | "finish";
 export interface Citation { chunkId: string; documentId: string; documentTitle: string; page: number | null; quote: string }
 export interface Criterion { id: string; concept: string; expectation: string; citation: Citation }
-export interface Msg { id: string; role: "user" | "assistant"; text: string; action: string | null; citations: Citation[] }
+export interface WebCitation { url: string; siteName: string; title: string; quote: string }
+export interface Msg { id: string; role: "user" | "assistant"; text: string; action: string | null; citations: Citation[]; webCitations?: WebCitation[] }
 export interface Evidence { id: string; criterion: string; claim: string; quote: string; status: "observed" | "unclear" | "contradicted"; assisted: boolean; criterionId: string | null; sourceCitation: Citation | null; context: string }
 export interface Gap { id: string; concept: string; status: string; supportLevel: number }
 export type CriterionStatus = "demonstrated_independent" | "demonstrated_with_support" | "needs_practice" | "insufficient_evidence";
@@ -30,7 +31,8 @@ export interface SessionView {
 export interface TurnResult {
   turnId: string; phase: string; action: string; assistantText: string; hintLevel: number; gaps: Gap[];
   newEvidence: Evidence[]; suggestModeSwitch: Mode | null; quickReplies: Intent[]; isFinished: boolean;
-  card?: MirrorCard; citations: Citation[]; traceId: string | null; modelInfo: { provider: string; model: string } | null;
+  card?: MirrorCard; citations: Citation[]; webCitations?: WebCitation[]; sourceTier?: "documents" | "web" | "general" | null;
+  traceId: string | null; modelInfo: { provider: string; model: string } | null;
 }
 export interface LibraryDoc { id: string; title: string; kind: string; pageCount: number; chunkCount: number; embedded: boolean; warnings: string[]; createdAt: string; origin: unknown; folderId?: string | null }
 export interface Folder { id: string; name: string; color: string; createdAt: string }
@@ -46,6 +48,7 @@ export interface TraceRecord {
     tools?: { name: string; initiator: string | null; ok: boolean; ms: number; error: string | null }[];
     guardrails?: string[]; retrieval?: { purpose: string | null; method: string | null; hits: number; ms: number }[];
     retries?: number; models?: string[];
+    web?: { method: string | null; fromCache: boolean; pages: string[]; rejected: number; note: string | null }[];
   };
 }
 

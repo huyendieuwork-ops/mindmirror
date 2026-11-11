@@ -7,6 +7,8 @@ import { GeminiEmbedder, type Embedder } from "./rag/embeddings";
 import { ConsoleExporter, LangfuseExporter, LangSmithExporter } from "./obs/exporters";
 import type { ContentMode, TraceExporter } from "./obs/tracer";
 import { loadPrices } from "./obs/pricing";
+import { TavilyProvider, WebSearcher, WikipediaProvider } from "./web/search";
+import type { Store } from "./store/types";
 
 export interface Env {
   APP_ENV?: string;
@@ -42,6 +44,11 @@ export interface Env {
   TRACE_CONTENT?: string;   // metadata (mặc định) | redacted | full
   TRACE_CONSOLE?: string;
   PRICING_JSON?: string;
+  // Nguồn web chính thống (Đợt 2)
+  TAVILY_API_KEY?: string;           // có → Tavily; không → Wikipedia API (miễn phí)
+  WEB_SEARCH?: string;               // "off" để tắt hẳn
+  LIMIT_WEB_SEARCHES_PER_DAY?: string; // mặc định 20
+  WEB_CACHE_DAYS?: string;           // mặc định 7
   // MCP
   CONNECTOR_ENC_KEY?: string;
   MCP_ALLOWED_HOSTS?: string;
@@ -70,6 +77,13 @@ export function buildEmbedder(env: Env): Embedder | null {
     apiKey: env.GEMINI_API_KEY, model: env.MODEL_EMBED ?? "gemini-embedding-001", dims: num(env.EMBED_DIMS, 768),
     apiVersion: env.GEMINI_API_VERSION, gateway: gatewayOf(env),
   });
+}
+
+/** search_trusted_sources: Tavily nếu có khoá, không thì Wikipedia; WEB_SEARCH="off" để tắt. */
+export function buildWebSearcher(env: Env, store: Store | null): WebSearcher | null {
+  if ((env.WEB_SEARCH ?? "").toLowerCase() === "off") return null;
+  const provider = env.TAVILY_API_KEY?.trim() ? new TavilyProvider(env.TAVILY_API_KEY.replace(/[^\x21-\x7E]/g, "")) : new WikipediaProvider();
+  return new WebSearcher({ provider, store, dailyLimit: num(env.LIMIT_WEB_SEARCHES_PER_DAY, 20), cacheDays: num(env.WEB_CACHE_DAYS, 7) });
 }
 
 export function buildExporters(env: Env): TraceExporter[] {

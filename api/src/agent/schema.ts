@@ -36,6 +36,8 @@ export const TurnOutputSchema = z.object({
   resolved_gaps: z.array(z.string().min(1).max(120)).max(3).default([]),
   hint_level: z.number().int().min(0).max(3).default(0),
   needs_source: z.boolean().default(false),
+  // Khi needs_source=true: từ khoá ngắn để tra nguồn chính thống (không chứa thông tin cá nhân).
+  search_query: z.string().max(120).nullable().optional(),
   ready_for_transfer: z.boolean().default(false),
   suggest_mode_switch: z.enum(["explore", "reunderstand"]).nullable().default(null),
   // Trích dẫn cho các nhận xét kiến thức trong assistant_text (đánh dấu [S1] trong lời)

@@ -98,7 +98,9 @@ describe("trích dẫn", () => {
     expect(validateCitation(i3, "3NF yêu cầu khóa chính chỉ có một cột", map)).toBeNull();
     expect(validateCitation("S9", "bất kỳ", map)).toBeNull();
     const out = renderCitationMarkers(`Tài liệu nói rõ điều này [${i3}]. Còn đây là bịa [S9].`, new Map([[i3, ok!]]));
-    expect(out.text).toBe("Tài liệu nói rõ điều này [1]. Còn đây là bịa.");
+    // Đợt 2 (sửa B-1): nhãn không hợp lệ → xoá cả câu khẳng định chứa nó, không chỉ xoá nhãn.
+    expect(out.text).toBe("Tài liệu nói rõ điều này [1].");
     expect(out.citations).toHaveLength(1);
+    expect(out.removedClaims).toBe(1);
   });
 });

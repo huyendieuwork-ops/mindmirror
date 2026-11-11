@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, explain, newTurnId, type Assessment, type Citation, type Intent, type MirrorCard, type Msg, type SessionView } from "../lib/api";
+import { api, explain, newTurnId, type Assessment, type Citation, type Intent, type MirrorCard, type Msg, type SessionView, type WebCitation } from "../lib/api";
 import { HINT_LABEL, INTENT_LABEL, PHASE_LABEL, STATUS_COLOR, STATUS_LABEL } from "../lib/labels";
 import { invalidate, MODE_PAGE, useLearningData } from "../lib/data";
 import MirrorCardView from "../components/MirrorCardView";
@@ -65,6 +65,11 @@ export default function SessionPage() {
   const allCitations = useMemo(() => {
     const out: { key: string; c: Citation; msgId: string; n: number }[] = [];
     s?.messages.forEach((m) => m.citations?.forEach((c, i) => out.push({ key: `${m.id}:${i + 1}`, c, msgId: m.id, n: i + 1 })));
+    return out.reverse();
+  }, [s]);
+  const allWeb = useMemo(() => {
+    const out: { key: string; c: WebCitation; n: number }[] = [];
+    s?.messages.forEach((m) => m.webCitations?.forEach((c, i) => out.push({ key: `${m.id}:W${i + 1}`, c, n: i + 1 })));
     return out.reverse();
   }, [s]);
 
@@ -171,24 +176,44 @@ export default function SessionPage() {
             <div className="flex gap-1 rounded-lg bg-paper p-1 text-sm" role="tablist">
               {(devMode ? (["sources", "trace"] as const) : (["sources"] as const)).map((t) => (
                 <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`flex-1 rounded-md px-3 py-1.5 ${tab === t ? "bg-sheet font-semibold text-ink shadow-sm" : "text-muted"}`}>
-                  {t === "sources" ? "Từ tài liệu" : "Agent đã làm gì"}
+                  {t === "sources" ? "Nguồn" : "Agent đã làm gì"}
                 </button>
               ))}
             </div>
             <div className="mt-4">
               {tab === "sources" || !devMode ? (
-                allCitations.length ? (
-                  <ul className="space-y-4">
-                    {allCitations.map(({ key, c, n }) => (
-                      <li key={key} id={`cite-${key}`} className={`rounded-lg text-sm transition-colors ${active === key ? "-mx-2 bg-marker/30 px-2 py-1" : ""}`}>
-                        <p className="text-xs text-muted">[{n}] {c.documentTitle}{c.page ? `, trang ${c.page}` : ""}</p>
-                        <p className="mt-1 leading-relaxed text-ink"><span className="hl">{c.quote}</span></p>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-muted">{s.documentIds.length ? "Khi MindMirror nhận xét dựa trên tài liệu, đoạn được trích sẽ hiện ở đây." : "Phiên này không gắn tài liệu. Chọn thư mục học liệu khi tạo phiên mới để được đối chiếu có trích dẫn."}</p>
-                )
+                <div className="space-y-6">
+                  <section>
+                    <h3 className="text-sm font-semibold text-ink">Từ tài liệu của bạn</h3>
+                    {allCitations.length ? (
+                      <ul className="mt-2 space-y-4">
+                        {allCitations.map(({ key, c, n }) => (
+                          <li key={key} id={`cite-${key}`} className={`rounded-lg text-sm transition-colors ${active === key ? "-mx-2 bg-marker/30 px-2 py-1" : ""}`}>
+                            <p className="text-xs text-muted">[{n}] {c.documentTitle}{c.page ? `, trang ${c.page}` : ""}</p>
+                            <p className="mt-1 leading-relaxed text-ink"><span className="hl">{c.quote}</span></p>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-sm text-muted">{s.documentIds.length ? "Khi MindMirror nhận xét dựa trên tài liệu, đoạn được trích sẽ hiện ở đây." : "Phiên này không gắn tài liệu. Chọn thư mục học liệu khi tạo phiên mới để được đối chiếu có trích dẫn."}</p>
+                    )}
+                  </section>
+                  {allWeb.length > 0 && (
+                    <section>
+                      <h3 className="text-sm font-semibold text-ink">Nguồn web</h3>
+                      <p className="text-[11px] text-muted">Chỉ từ danh sách nguồn chính thống; câu trích có nguyên văn trong trang.</p>
+                      <ul className="mt-2 space-y-4">
+                        {allWeb.map(({ key, c, n }) => (
+                          <li key={key} id={`cite-${key}`} className={`rounded-lg border-l-2 border-dashed border-mirror/60 pl-2 text-sm transition-colors ${active === key ? "bg-marker/30" : ""}`}>
+                            <p className="text-xs text-muted">[W{n}] {c.siteName}</p>
+                            <a href={c.url} target="_blank" rel="noopener noreferrer nofollow" className="block text-sm font-medium text-mirror underline-offset-2 hover:underline">{c.title}</a>
+                            <p className="mt-1 leading-relaxed text-ink">“{c.quote}”</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                </div>
               ) : (
                 <TracePanel sessionId={id} version={version} />
               )}
@@ -225,8 +250,17 @@ function Message({ m, active, onCite }: { m: Msg; active: string | null; onCite:
     );
   }
   const inline = (line: string, li: number): ReactNode[] =>
-    line.split(/(\*\*[^*]+\*\*|\[\d+(?:,\s*\d+)*\])/g).map((p, i) => {
+    line.split(/(\*\*[^*]+\*\*|\[\d+(?:,\s*\d+)*\]|\[W\d+\])/g).map((p, i) => {
       if (/^\*\*[^*]+\*\*$/.test(p)) return <strong key={`${li}-${i}`} className="font-semibold text-ink">{p.slice(2, -2)}</strong>;
+      const w = /^\[W(\d+)\]$/.exec(p)?.[1];
+      if (w) {
+        const c = m.webCitations?.[Number(w) - 1];
+        const key = `${m.id}:W${w}`;
+        return c ? (
+          <button key={`${li}-${i}`} className={`cite-ref cite-web ${active === key ? "bg-marker/60" : ""}`} title={`Nguồn web: ${c.siteName} — ${c.title}`}
+            onClick={() => { onCite(key); setTimeout(() => document.getElementById(`cite-${key}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 50); }}>W{w}</button>
+        ) : null;
+      }
       const nums = /^\[(\d+(?:,\s*\d+)*)\]$/.exec(p)?.[1];
       if (!nums || !m.citations?.length) return <Fragment key={`${li}-${i}`}>{p}</Fragment>;
       return nums.split(",").map((n) => n.trim()).map((n) => {

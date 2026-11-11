@@ -1,5 +1,5 @@
 import { decide, detectIntent, isSupportAction, DEFAULT_LIMITS, type Limits } from "./policy";
-import { systemPrompt, turnPrompt, summaryPrompt, planPrompt } from "./prompts";
+import { systemPrompt, turnPrompt, summaryPrompt, planPrompt, webSourcesBlock } from "./prompts";
 import { TurnOutputSchema, SummaryOutputSchema, PlanOutputSchema, extractJson, type TurnOutput } from "./schema";
 import { findQuoteSource } from "./evidence";
 import {
@@ -12,11 +12,13 @@ import type { ToolExchange } from "../providers/types";
 import { buildMirrorCard, sameConcept } from "./mirror-card";
 import type {
   Action, Citation, Criterion, Evidence, Gap, LearningState, Message, RetrievedChunk, Session, SessionMode, TurnResult, UserIntent, UserSettings,
+  WebCitation,
 } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import type { ModelRouter } from "../providers/router";
 import type { Retriever } from "../rag/retriever";
-import { aliasMap, renderCitationMarkers, validateCitation } from "../rag/grounding";
+import { aliasMap, renderCitationMarkers, stripUnlistedLinks, validateCitation, validateWebCitation, webAliasMap } from "../rag/grounding";
+import type { WebPassage, WebSearcher } from "../web/search";
 import { NoopTrace, type SpanHandle, type Trace } from "../obs/tracer";
 
 export interface EngineDeps {
@@ -32,11 +34,14 @@ export interface EngineDeps {
   maxToolRounds?: number;       // số vòng model gọi công cụ tối đa / lượt (mặc định 1)
   maxLlmCallsPerTurn?: number;  // trần số lần gọi model / lượt, gồm cả vòng tool và vòng sửa JSON (mặc định 3)
   maxInputChars?: number;
+  /** Đợt 2: tìm nguồn web chính thống khi tài liệu thiếu căn cứ (chế độ Khám phá). null = tắt. */
+  web?: WebSearcher | null;
+  subject?: string;
 }
 
 /** Các bước workflow của một lượt — mỗi bước là một span "step.<tên>" trong trace. */
 export const WORKFLOW_STEPS = [
-  "input_validation", "intent_understanding", "policy_decision", "evidence_retrieval", "knowledge_analysis",
+  "input_validation", "intent_understanding", "policy_decision", "evidence_retrieval", "knowledge_analysis", "web_search",
   "misconception_detection", "output_validation", "reassessment", "session_summary",
 ] as const;
 
@@ -298,7 +303,7 @@ async function runTurnInner(
   const budget = { used: 0, max: deps.maxLlmCallsPerTurn ?? 3 };
   await maybeSummarize(s, deps, root);
   const toolCtx = (parent: SpanHandle, initiator: "policy" | "model", sourceOffset: number) => ({
-    userId: s.userId, store: deps.tools!.store, retriever: deps.retriever ?? null, session: s, trace, parent, initiator, sourceOffset,
+    userId: s.userId, store: deps.tools!.store, retriever: deps.retriever ?? null, session: s, trace, parent, initiator, sourceOffset, web: deps.web ?? null,
   });
 
   // 4a. Evidence retrieval: phiên có tài liệu → policy LUÔN lấy ngữ cảnh (rẻ, không gọi LLM)
@@ -405,17 +410,72 @@ async function runTurnInner(
       llmSpan.end();
     }
   });
-  const { output, provider, model } = gen;
+  let { output, provider, model } = gen;
+
+  // ---------- 4d. Nguồn chính thống (Đợt 2): chỉ Khám phá, khi lần gọi 1 báo thiếu căn cứ (G1–G5) ----------
+  let webPassages: WebPassage[] = [];
+  let webTried = false;
+  if (s.state.mode === "explore") {
+    const docCitesValid = output.source_citations.filter((c) => validateCitation(c.source, c.quote, aliasMap(retrieved))).length;
+    // G3: model báo thiếu nguồn — bằng cờ needs_source HOẶC tự gắn nhãn "kiến thức chung" cho câu trả lời (model nhẹ hay quên cờ).
+    const g3Label = GENERAL_LABEL.test(output.assistant_text);
+    const g = {
+      G3_needs_source: output.needs_source || g3Label,
+      G4_no_doc_citation: docCitesValid === 0,
+      G5_budget: !!deps.tools && !!deps.web && budget.used <= 1 && budget.used < budget.max,
+    };
+    if (g.G3_needs_source && g.G4_no_doc_citation && g.G5_budget) {
+      webTried = true;
+      const second = await step("web_search", async (span) => {
+        span.set({ conditions: g, g3_signal: output.needs_source ? "needs_source" : "general_label" });
+        const query = (output.search_query?.trim() || `${s.state.topic}: ${text}`).slice(0, 200);
+        // C1: đúng 1 lần mỗi lượt — gọi trực tiếp một lần ở đây, không mở cho model tự gọi.
+        const r = await executeTool("search_trusted_sources", { query, subject: deps.subject ?? null }, toolCtx(span, "policy", 0));
+        toolsUsed.push({ name: "search_trusted_sources", initiator: "policy", ok: r.ok });
+        if (!r.ok) { guardrails.push(`web:${r.error.message === "daily_web_search_limit" ? "daily_limit" : "unavailable"}`); return null; }
+        webPassages = r.web ?? [];
+        span.set({ passages: webPassages.length, from_cache: (r.data as { from_cache?: boolean }).from_cache ?? false });
+        if (!webPassages.length) return null;
+        // Lần gọi 2 với các đoạn web đã kiểm tra (tổng ≤ 3 lần gọi/lượt).
+        const llmSpan = span.child("agent.respond_with_web", "chain", { web_sources: webPassages.length });
+        try {
+          return await callTurnModel(deps.core, {
+            system: sys,
+            user: `${user}\n${webSourcesBlock(webPassages)}\nChỉ thị bổ sung: hệ thống đã tìm nguồn chính thống cho câu hỏi này (<web_sources>). Viết lại câu trả lời: ý lấy từ trang web gắn nhãn [W1], [W2]... và thêm vào source_citations {"source":"W1","quote":"<copy NGUYÊN VĂN 5–30 từ trong đoạn W1>"}; tài liệu của người học (nếu có) vẫn là căn cứ chính; phần không có trong nguồn nào ghi "(kiến thức chung, chưa đối chiếu nguồn)". Không tự viết link. Đặt needs_source=false.`,
+            allowed: decision.allowedActions, span: llmSpan, budget, toolMode: "NONE", exchanges: [], maxOutputTokens: long ? 1500 : 900, temperature: 0.4,
+          });
+        } catch (e) {
+          if (!(e instanceof AgentUnavailableError)) throw e;
+          llmSpan.fail(e);
+          guardrails.push("web:second_call_failed");
+          return null; // giữ câu trả lời lần 1 (kiến thức chung, có nhãn)
+        } finally {
+          llmSpan.end();
+        }
+      });
+      if (second?.kind === "final") ({ output, provider, model } = second);
+    } else {
+      workflow.push({ step: "web_search", ms: 0, status: "skipped", note: Object.entries(g).filter(([, v]) => !v).map(([k]) => k).join(",") });
+    }
+  }
   const vSpan = root.child("validate.output", "guardrail");
 
   // ---------- 5. Misconception detection: bằng chứng + lỗ hổng, kiểm chứng bằng code ----------
   const groundedNow = retrieved.length > 0 || s.rubric.length > 0;
   const aliases = aliasMap(retrieved);
+  const webAliases = webAliasMap(webPassages);
   const validCites = new Map<string, Citation>();
+  const validWeb = new Map<string, WebCitation>();
   const { newEvidence, dropped, downgraded, observedNow, focusGap, supportBefore } = await step("misconception_detection", (span) => {
     for (const c of output.source_citations) {
+      const key = c.source.trim().toUpperCase();
+      if (key.startsWith("W")) {
+        const w = validateWebCitation(key, c.quote, webAliases);
+        if (w) validWeb.set(key, w);
+        continue;
+      }
       const v = validateCitation(c.source, c.quote, aliases);
-      if (v) validCites.set(c.source.trim().toUpperCase(), v);
+      if (v) validCites.set(key, v);
     }
     const supportBefore = s.state.supportCount;
     const newEvidence: Evidence[] = [];
@@ -487,13 +547,21 @@ async function runTurnInner(
     if (leak) raw = fallbackText;
     const sec = redactSecrets(raw);
     const praise = stripUnsupportedPraise(sec.text, observedNow);
-    const rendered = renderCitationMarkers(sanitizeAssistantText(praise.text, fallbackText, long ? 3600 : 1800), validCites);
+    const links = stripUnlistedLinks(praise.text, webPassages.map((p) => p.url)); // L7
+    const rendered = renderCitationMarkers(sanitizeAssistantText(links.text, fallbackText, long ? 3600 : 1800), validCites, validWeb);
+    // Đã tìm web mà không còn trích dẫn web hợp lệ nào → rơi về bậc 3, nói rõ chưa đối chiếu được.
+    if (webTried && !rendered.webCitations.length && !rendered.citations.length && !/chưa đối chiếu/i.test(rendered.text)) {
+      rendered.text += webPassages.length
+        ? "\n\n(Phần trên là kiến thức chung — mình chưa trích được câu nào khớp nguyên văn trong nguồn chính thống.)"
+        : "\n\n(Phần trên là kiến thức chung — mình chưa tìm thấy nguồn chính thống phù hợp để đối chiếu.)";
+    }
     const prevQuestions = s.messages.filter((m) => m.role === "assistant").slice(-3).map((m) => m.text);
     const repeated = isRepeatedQuestion(rendered.text, prevQuestions);
     const socratic = s.state.mode === "reunderstand" && !isSupportAction(action);
     const leakScore = socratic && s.rubric.length ? Math.max(...s.rubric.map((c) => answerOverlap(rendered.text, c.expectation))) : 0;
     const flags = [
       leak && "output:system_prompt_leak_blocked", sec.redacted && "output:secret_redacted", praise.removed && "output:unsupported_praise_removed",
+      links.removed && "output:unlisted_link_removed", rendered.removedClaims && "output:unsupported_claim_removed",
       repeated && "output:repeated_question", leakScore >= 0.6 && "output:possible_answer_leak",
     ].filter(Boolean) as string[];
     span.set({ flags, answer_overlap: Math.round(leakScore * 100) / 100 });
@@ -545,7 +613,12 @@ async function runTurnInner(
     span.set({ phase: st.phase, hint_level: st.hintLevel, round_on_same_gap: st.roundOnSameGap });
   });
 
-  s.messages.push({ id: id(), role: "assistant", text: assistantText, action, intent: null, citations: outGuard.rendered.citations, createdAt: nowIso });
+  const webCitations = outGuard.rendered.webCitations;
+  const sourceTier: TurnResult["sourceTier"] = outGuard.rendered.citations.length ? "documents" : webCitations.length ? "web" : s.state.mode === "explore" ? "general" : null;
+  s.messages.push({
+    id: id(), role: "assistant", text: assistantText, action, intent: null, citations: outGuard.rendered.citations,
+    ...(webCitations.length ? { webCitations } : {}), createdAt: nowIso,
+  });
   s.updatedAt = nowIso;
 
   vSpan.set({
@@ -553,6 +626,7 @@ async function runTurnInner(
     evidence_proposed: output.observed_evidence.length, evidence_kept: newEvidence.length, evidence_dropped_fake_quote: dropped,
     evidence_downgraded_no_source: downgraded,
     citations_proposed: output.source_citations.length, citations_valid: validCites.size, citations_rendered: outGuard.rendered.citations.length,
+    web_citations_valid: validWeb.size, web_citations_rendered: webCitations.length, source_tier: sourceTier,
     gaps_open: s.gaps.filter((g) => g.status === "open").length, guardrails, llm_calls: budget.used,
   }).end();
   finishMeta();
@@ -562,12 +636,15 @@ async function runTurnInner(
     result: baseResult(s, id(), action, assistantText, newEvidence, { provider, model }, {
       quickReplies: quickRepliesFor(s),
       citations: outGuard.rendered.citations,
+      webCitations,
+      sourceTier,
       toolsUsed,
       guardrails,
     }),
   };
 }
 
+const GENERAL_LABEL = /kiến thức chung|chưa đối chiếu (với )?nguồn/i;
 const PAST_REF = /(lần trước|hôm trước|buổi trước|tuần trước|trước đây|đã học|ôn lại|lịch sử học|chỗ (em|mình|tôi) (hay )?(sai|vướng|yếu)|điểm yếu)/i;
 const DOC_REF = /(tài liệu|slide|giáo trình|bài giảng|sách|ghi chú|file|trang \d+|chương \d+)/i;
 
