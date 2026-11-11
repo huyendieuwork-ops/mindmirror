@@ -58,16 +58,36 @@ export const extractionPrompt = ChatPromptTemplate.fromMessages([
   ["human", "{passages}"],
 ]);
 
+const EXTRACTION_KEYS = ["concepts", "relations", "mentions"] as const;
+const hasExtractionKey = (o: object) => EXTRACTION_KEYS.some((k) => k in o);
+
+/**
+ * JSON của model → Extraction. `ok:false` (lô được đọc lại ở lần bấm sau, KHÔNG đánh dấu trang đã đọc) khi:
+ *  - không phải object / là mảng / là lỗi;
+ *  - object không có khoá nào trong concepts/relations/mentions (model dự phòng hay đổi tên khoá hoặc bọc thêm một lớp —
+ *    trước đây zod điền mặc định [] nên lô "thành công" với 0 khái niệm và trang bị đánh dấu đã đọc).
+ * Bọc đúng một lớp ({"result": {concepts…}}) thì gỡ lớp bọc.
+ */
+export function normalizeExtraction(raw: unknown): Extraction & { ok: boolean } {
+  const fail = { concepts: [], relations: [], mentions: [], ok: false };
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw) || raw instanceof Error) return fail;
+  let obj = raw as Record<string, unknown>;
+  if (!hasExtractionKey(obj)) {
+    const vals = Object.values(obj);
+    const inner = vals.length === 1 ? vals[0] : null;
+    if (inner && typeof inner === "object" && !Array.isArray(inner) && hasExtractionKey(inner)) obj = inner as Record<string, unknown>;
+    else return fail;
+  }
+  const r = ExtractionSchema.safeParse(obj);
+  return r.success ? { ...r.data, ok: true } : fail;
+}
+
 /** prompt → model → JSON → zod. Lỗi parse/schema một lô → trả rỗng (lô đó bỏ qua, không làm hỏng cả lần dựng). */
 export function extractionChain(model: RouterChatModel) {
   return RunnableSequence.from([
     extractionPrompt,
     model,
     new JsonOutputParser(),
-    RunnableLambda.from((raw: unknown): Extraction & { ok: boolean } => {
-      if (raw === null || typeof raw !== "object" || Array.isArray(raw) || raw instanceof Error) return { concepts: [], relations: [], mentions: [], ok: false };
-      const r = ExtractionSchema.safeParse(raw);
-      return r.success ? { ...r.data, ok: true } : { concepts: [], relations: [], mentions: [], ok: false };
-    }),
+    RunnableLambda.from((raw: unknown): Extraction & { ok: boolean } => normalizeExtraction(raw)),
   ]);
 }
