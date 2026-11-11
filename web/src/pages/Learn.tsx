@@ -32,7 +32,7 @@ export default function Learn({ mode }: { mode: Mode }) {
   const documentIds = source === "custom" ? picked : source === "none" ? [] : folderDocs.slice(0, 5).map((d) => d.id);
   const recent = sessions.filter((s) => s.mode === mode).slice(0, 6);
   const options = [
-    { value: "none", label: "Không gắn học liệu" },
+    { value: "none", label: "Không dùng tài liệu" },
     ...folders.map((f) => ({ value: f.id, label: `${f.name} (${docs.filter((d) => d.folderId === f.id).length})` })),
     ...(docs.length ? [{ value: "custom", label: "Tự chọn tài liệu…" }] : []),
   ];
@@ -41,7 +41,8 @@ export default function Learn({ mode }: { mode: Mode }) {
     if (!t.trim() || starting) return;
     setStarting(true); setError(null);
     try {
-      const s = await api.createSession({ mode, topic: t.trim(), goal: goal.trim() || undefined, self_confidence: conf, document_ids: documentIds });
+      const folderId = source !== "none" && source !== "custom" ? source : undefined;
+      const s = await api.createSession({ mode, topic: t.trim(), goal: goal.trim() || undefined, self_confidence: conf, document_ids: documentIds, folder_id: folderId });
       invalidate();
       nav(sessionPath({ id: s.id, mode }));
     } catch (e) { setError(explain(e)); setStarting(false); }
@@ -51,14 +52,14 @@ export default function Learn({ mode }: { mode: Mode }) {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader title={page.title} subtitle={page.subtitle}
-        actions={<Link to="/folders" className="inline-flex items-center gap-2 rounded-lg border border-line bg-sheet px-3.5 py-2 text-sm font-medium text-ink hover:border-mirror/60 hover:text-mirror"><Icon name="folder" /> My Folder</Link>} />
+        actions={<Link to="/folders" className="inline-flex items-center gap-2 rounded-lg border border-line bg-sheet px-3.5 py-2 text-sm font-medium text-ink hover:border-mirror/60 hover:text-mirror"><Icon name="folder" /> Thư mục</Link>} />
 
       <section className="panel overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="font-semibold text-ink">{mode === "reunderstand" ? "Cuộc trò chuyện mới" : "Chủ đề mới"}</p>
           <div className="flex items-center gap-2">
             <Icon name="folder" className="h-4 w-4 text-mirror" />
-            <SelectBox label="Học liệu" value={source} onChange={setSource} options={options} className="w-60" />
+            <SelectBox label="Tài liệu (không bắt buộc)" value={source} onChange={setSource} options={options} className="w-60" />
           </div>
         </div>
 
@@ -128,7 +129,7 @@ export default function Learn({ mode }: { mode: Mode }) {
             {recent.map((s) => (
               <Link key={s.id} to={sessionPath(s)} className="panel block p-4 transition-all hover:-translate-y-0.5 hover:border-mirror/50">
                 <p className="truncate font-semibold text-ink">{s.topic}</p>
-                <p className="mt-1 text-xs text-muted">{timeAgo(s.updatedAt)} · {s.status === "finished" ? <span className="text-moss">Đã tổng kết</span> : "Đang dở"}</p>
+                <p className="mt-1 text-xs text-muted">{timeAgo(s.updatedAt)} · {s.status === "finished" ? <span className="text-moss">Đã tổng kết</span> : "Chưa hoàn thành"}</p>
               </Link>
             ))}
           </div>
