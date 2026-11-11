@@ -66,13 +66,17 @@ export class WikipediaProvider implements SearchProvider {
   readonly name = "wikipedia";
   constructor(private doFetch: FetchFn = (u, i) => fetch(u, i), private langs = ["vi", "en"]) {}
   async search(query: string): Promise<SearchHit[]> {
+    // Wikipedia tìm theo MỌI từ: câu dài thường không ra gì → thử lại với từ khoá ngắn (bỏ từ hỏi/hư từ).
+    const attempts = [...new Set([query, keywordQuery(query)].filter((q) => q && q.length >= 2))];
     for (const lang of this.langs) {
-      const u = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&format=json&utf8=1&srlimit=3&srprop=&srsearch=${encodeURIComponent(query)}`;
-      const r = await this.doFetch(u, { headers: { "user-agent": USER_AGENT, accept: "application/json" } });
-      if (!r.ok) throw new WebSearchError("unavailable", `wikipedia_${r.status}`);
-      const j = (await r.json()) as { query?: { search?: { title: string }[] } };
-      const hits = (j.query?.search ?? []).map((x) => ({ url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(x.title.replace(/ /g, "_"))}`, title: x.title }));
-      if (hits.length) return hits;
+      for (const q of attempts) {
+        const u = `https://${lang}.wikipedia.org/w/api.php?action=query&list=search&format=json&utf8=1&srlimit=3&srprop=&srsearch=${encodeURIComponent(q)}`;
+        const r = await this.doFetch(u, { headers: { "user-agent": USER_AGENT, accept: "application/json" } });
+        if (!r.ok) throw new WebSearchError("unavailable", `wikipedia_${r.status}`);
+        const j = (await r.json()) as { query?: { search?: { title: string }[] } };
+        const hits = (j.query?.search ?? []).map((x) => ({ url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(x.title.replace(/ /g, "_"))}`, title: x.title }));
+        if (hits.length) return hits;
+      }
     }
     return [];
   }
@@ -89,6 +93,21 @@ export function sanitizeQuery(q: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 200);
+}
+
+// Cụm từ hỏi/xã giao không mang nội dung tra cứu.
+// Ranh giới theo chữ cái Unicode (\b của JS không hiểu chữ có dấu: "hả" không được khớp trong "nhả").
+const QUESTION_PHRASES = /(?<!\p{L})(cho (mình|em|tôi|tớ) hỏi|giúp (mình|em|tôi|tớ)|giải thích( giúp)?|hoạt động (như )?thế nào|như thế nào|thế nào|là gì|là sao|ra sao|vì sao|tại sao|để làm gì|khác (nhau )?(ở )?(điểm )?(nào|gì)|khác nhau|(ở )?điểm nào|so sánh|có nghĩa là|nghĩa là gì|hả|nhỉ|vậy|ạ|ơi|với)(?!\p{L})/giu;
+const FILLER = new Set(["mình", "em", "tôi", "tớ", "bạn", "cậu", "ơi", "nhé", "nha", "thì", "là", "của", "và", "các", "những", "một", "cái", "về", "trong", "cho", "có", "không", "gì", "nào", "này", "đó", "được", "hãy", "muốn", "biết", "hiểu"]);
+
+/** Từ khoá ngắn từ câu hỏi tự nhiên: "Chỉ mục B-tree hoạt động thế nào?" → "Chỉ mục B-tree" (tối đa 6 từ). */
+export function keywordQuery(text: string): string {
+  const words = text
+    .replace(QUESTION_PHRASES, " ")
+    .replace(/[?!.,;:()"“”'`]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w && !FILLER.has(w.toLowerCase()));
+  return words.slice(0, 6).join(" ").trim();
 }
 
 export function normalizeQuery(q: string): string {

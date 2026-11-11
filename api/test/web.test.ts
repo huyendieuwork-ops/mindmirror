@@ -267,3 +267,37 @@ describe("Đợt 2 – search_trusted_sources trong workflow Khám phá", () => 
     expect(p.calls[1]!.user).toMatch(/<web_source id="W\d" [^>]*warning=/);
   });
 });
+
+describe("Đợt 2 (sửa sau rà soát) – từ khoá tìm kiếm", () => {
+  it("rút từ khoá từ câu hỏi tự nhiên, không ăn nhầm chữ có dấu", async () => {
+    const { keywordQuery } = await import("../src/web/search");
+    expect(keywordQuery("Chỉ mục B-tree hoạt động thế nào?")).toBe("Chỉ mục B-tree");
+    expect(keywordQuery("Cho mình hỏi khóa ngoại là gì vậy?")).toBe("khóa ngoại");
+    expect(keywordQuery("Giải thích giúp em thao tác nhả khóa")).toBe("thao tác nhả khóa");
+  });
+
+  it("Wikipedia: câu dài không ra kết quả → thử lại bằng từ khoá ngắn", async () => {
+    const { WikipediaProvider } = await import("../src/web/search");
+    const asked: string[] = [];
+    const fetchFn = async (u: string) => {
+      const q = new URL(u).searchParams.get("srsearch")!;
+      asked.push(q);
+      const hit = q === "Chỉ mục B-tree" ? [{ title: "B-tree" }] : [];
+      return new Response(JSON.stringify({ query: { search: hit } }), { headers: { "content-type": "application/json" } });
+    };
+    const hits = await new WikipediaProvider(fetchFn as any, ["vi"]).search("Chỉ mục B-tree hoạt động thế nào?");
+    expect(asked).toEqual(["Chỉ mục B-tree hoạt động thế nào?", "Chỉ mục B-tree"]);
+    expect(hits[0]!.url).toBe("https://vi.wikipedia.org/wiki/B-tree");
+  });
+
+  it("model quên search_query → truy vấn lấy từ câu hỏi, không ghép chủ đề phiên", async () => {
+    const store = new MemoryStore();
+    const seen: string[] = [];
+    const prov: SearchProvider = { name: "spy", async search(q: string) { seen.push(q); return []; } };
+    const web = new WebSearcher({ provider: prov, fetch: fakeFetch({}).fn as any, store });
+    const s = createSession({ userId: U, mode: "explore", topic: "Chuẩn hóa cơ sở dữ liệu" }, { id: seqId });
+    const { router } = scripted([turnOut({ next_action: "acknowledge", assistant_text: "B-tree là cây cân bằng (kiến thức chung, chưa đối chiếu nguồn)." })]);
+    await runTurn(s, { text: "Chỉ mục B-tree hoạt động thế nào?" }, { core: router, id: seqId, tools: { store }, web });
+    expect(seen).toEqual(["Chỉ mục B-tree"]);
+  });
+});

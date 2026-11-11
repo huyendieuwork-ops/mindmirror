@@ -5,7 +5,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: api } }
     env:
-      HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' }}   # secrets không dùng trực tiếp trong if
+      HAS_GEMINI: ${{ (secrets.GEMINI_API_KEY_CI || secrets.GEMINI_API_KEY) != '' }}   # secrets không dùng trực tiếp trong if
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,11 +21,11 @@ jobs:
       - if: env.HAS_GEMINI == 'true'
         run: npm run eval:agent -- --live --max-calls 24
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_CI || secrets.GEMINI_API_KEY }}   # ưu tiên khoá riêng cho CI để không tiêu hạn mức của web
       # Eval có model thật: chỉ chạy khi có secret (vd nhánh main / chạy tay)
       - if: env.HAS_GEMINI == 'true'
         run: npm run eval -- --suite judgment --runs 3 --ci
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_CI || secrets.GEMINI_API_KEY }}   # ưu tiên khoá riêng cho CI để không tiêu hạn mức của web
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}

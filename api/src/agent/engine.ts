@@ -18,7 +18,7 @@ import { DEFAULT_SETTINGS } from "./types";
 import type { ModelRouter } from "../providers/router";
 import type { Retriever } from "../rag/retriever";
 import { aliasMap, renderCitationMarkers, stripUnlistedLinks, validateCitation, validateWebCitation, webAliasMap } from "../rag/grounding";
-import type { WebPassage, WebSearcher } from "../web/search";
+import { keywordQuery, type WebPassage, type WebSearcher } from "../web/search";
 import { NoopTrace, type SpanHandle, type Trace } from "../obs/tracer";
 
 export interface EngineDeps {
@@ -428,7 +428,9 @@ async function runTurnInner(
       webTried = true;
       const second = await step("web_search", async (span) => {
         span.set({ conditions: g, g3_signal: output.needs_source ? "needs_source" : "general_label" });
-        const query = (output.search_query?.trim() || `${s.state.topic}: ${text}`).slice(0, 200);
+        // Model không điền search_query (hay gặp khi chỉ tự gắn nhãn) → lấy từ khoá trong câu hỏi, KHÔNG ghép chủ đề phiên
+        // (chủ đề "Chuẩn hoá" + câu hỏi về B-tree làm Wikipedia trả trang lạc đề).
+        const query = (output.search_query?.trim() || keywordQuery(text) || s.state.topic).slice(0, 200);
         // C1: đúng 1 lần mỗi lượt — gọi trực tiếp một lần ở đây, không mở cho model tự gọi.
         const r = await executeTool("search_trusted_sources", { query, subject: deps.subject ?? null }, toolCtx(span, "policy", 0));
         toolsUsed.push({ name: "search_trusted_sources", initiator: "policy", ok: r.ok });
