@@ -61,6 +61,13 @@ flowchart TD
 - Không có bằng chứng `observed` → không chuyển sang transfer/reflect; thẻ cuối ghi "chưa đủ căn cứ" và **không gọi model**.
 - Người học xin đáp án → policy ép `show_answer`; muốn dừng → `finish`.
 
+### 2b. Khám phá "học từ đầu" (dàn ý + điểm kiểm tra)
+
+- Khi tạo phiên Khám phá, người học chọn trình độ: **Mới bắt đầu / Đã biết một chút / Ôn lại** (hoặc *Hỏi đáp tự do* = Khám phá như cũ).
+- `prepareLearningPath` gọi model **1 lần** để lập dàn ý 3–5 phần (`title`, `objective`, `checkpoint`), bám tài liệu nếu phiên có tài liệu và dùng mục tiêu thư mục như dữ kiện. Model lỗi → dàn ý dự phòng theo trình độ (`rulesPath`, 0 API call).
+- `agent/path.ts` (code) điều phối: lượt giảng phần *k* → kết thúc bằng **Kiểm tra nhanh** → người học trả lời → model đặt `checkpoint_passed` → code quyết định: đạt → sang phần tiếp; chưa đạt lần 1 → giải thích lại cách khác; chưa đạt lần 2 → nêu đáp án, ghi "nên ôn lại", sang phần tiếp. Nút *Sang phần tiếp* (skip) và *Xem đáp án* cũng do code chuyển phần.
+- Trạng thái dàn ý nằm trong `LearningState.path`, trả về cùng phiên và mỗi lượt (`TurnResult.path`) để giao diện vẽ dải dàn bài. Test: `api/test/learning-path.test.ts`.
+
 ## 3. Ví dụ một phiên hoàn chỉnh
 
 | Lượt | Người học | Hệ thống làm gì | MindMirror |
