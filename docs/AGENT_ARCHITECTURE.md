@@ -77,7 +77,7 @@ Lượt 1 và lượt 3 được kiểm thử tự động (`test/agent-mvp.test
 
 | Công cụ | Ai được gọi | Chỉ-đọc | Kiểm quyền |
 |---|---|---|---|
-| `search_learning_materials` | model (khi được mở), MCP | ✔ | chỉ tài liệu/thư mục của `userId`; id lạ → `forbidden` |
+| `search_learning_materials` | workflow (phiên không gắn tài liệu mà người học nhắc tài liệu/slide của họ), model (khi được mở), MCP | ✔ | chỉ tài liệu/thư mục của `userId`; id lạ → `forbidden` |
 | `retrieve_document_context` | workflow (mỗi lượt phiên có tài liệu), model | ✔ | phiên phải thuộc `userId` |
 | `get_learning_history` | model, MCP | ✔ | chỉ phiên của `userId` |
 | `get_knowledge_gaps` | model, MCP | ✔ | chỉ phiên của `userId` |
@@ -97,6 +97,11 @@ Lượt 1 và lượt 3 được kiểm thử tự động (`test/agent-mvp.test
 | Đánh giá | Quote không phải lời người học → loại; có tài liệu: chê sai phải kèm trích dẫn, khen đúng phải gắn tiêu chí/nguồn; không tài liệu + model tự báo `low` → không kết luận "sai"; không khen "đã hiểu rõ" khi lượt này chưa có bằng chứng; cấm % mức hiểu/chẩn đoán năng lực | `ga-01…06` |
 | Đầu ra | Zod schema + 1 lần sửa; action phải thuộc tập policy cho phép; trích dẫn phải có thật; chặn rò rỉ system prompt; che chuỗi giống khoá API/JWT; đo trùng lặp với đáp án mẫu (lộ đáp án); phát hiện câu hỏi lặp; fallback an toàn | `rc-01…05`, "output guard…" |
 | Bảo mật | Mọi tool kiểm quyền theo `userId`; validate tham số; model không gọi được tool ghi; MCP không phơi bày tool ghi; tài liệu bọc `<source>` + gắn cảnh báo đoạn nghi chỉ thị | `gt-01…05`, test MCP "người dùng khác…" |
+
+### Quy tắc chấm điểm (theo tài liệu "Rule chấm điểm MindMirror")
+
+- **Rule 1 – Ý bắt buộc:** mỗi tiêu chí ghi `expectation` theo mẫu `Bắt buộc: <ý 1>; <ý 2>. Không bắt buộc: <ý phụ>.` (tối đa 2 ý bắt buộc). Model chấm theo thứ tự cố định, dừng ở bước đầu tiên khớp: (1) không có nội dung → `unclear`; (2) khẳng định ngược tài liệu → `contradicted`; (3) đủ mọi ý bắt buộc → `observed`; (4) còn lại → `unclear` và hỏi đúng ý còn thiếu. Thiếu ý phụ vẫn `observed`, AI hỏi gợi mở về một ý phụ và không ghi vào `suspected_gaps`. Chỗ sửa: `SOCRATIC_RULES` (S4–S6) và `planPrompt` trong `api/src/agent/prompts.ts`; 14 ca trong `eval/fixtures/judgments.json` đã viết lại `expectation` theo bảng ý bắt buộc (nhãn chuẩn không đổi).
+- **Rule 3 – Temperature:** Kiểm tra kiến thức gọi Gemini với temperature 0; Khám phá giữ 0,4. Vẫn 1 lần gọi model mỗi lượt.
 
 ## 6. Observability
 
@@ -171,7 +176,7 @@ Hoặc mở **MCP Inspector** (`npx @modelcontextprotocol/inspector`), chọn St
 
 ## 11. Giới hạn đã biết
 
-- Tool selection live: model chưa tự gọi `search_learning_materials` khi người học nhắc "tài liệu của em" (ts-01 trượt cả 2 lần chạy). Hướng sửa đề xuất: khi `DOC_REF` khớp và thư viện có tài liệu, để policy gọi công cụ một cách deterministic (giống `retrieve_document_context`) thay vì chờ model quyết định.
+- Tool selection: từ đợt 1, khi người học nhắc tài liệu/slide của họ (regex `DOC_REF`) trong phiên không gắn tài liệu, workflow tự gọi `search_learning_materials` (trước đó ts-01 trượt vì model hay hỏi lại thay vì tìm). Phát hiện "nhắc tài liệu" dựa trên từ khoá, nên cách nói khác thường có thể không kích hoạt.
 - Judgment eval: độ nhất quán qua 3 lần chạy 71% (< 80%) — model dao động ở ca "đúng một phần"; cần thêm ca gán nhãn và/hoặc temperature thấp hơn cho bước chấm.
 - Phát hiện injection dựa trên mẫu (regex) — chặn được các dạng phổ biến EN/VI, không chống được mọi biến thể; lớp phòng thủ chính vẫn là: tài liệu chỉ là dữ kiện, quyền kiểm theo `userId`, mọi phán đoán phải có bằng chứng kiểm chứng bằng code.
 - "Lộ đáp án quá sớm" mới được **đo** (trùng lặp trigram với đáp án mẫu) và ghi guardrail, chưa tự viết lại câu trả lời (tránh tốn thêm lời gọi).
