@@ -26,7 +26,7 @@ export function useLibrary() {
         if (folderId) await api.moveDocument(r.document.id, folderId).catch(() => {});
         added.push({ ...r.document, folderId: folderId ?? r.document.folderId ?? null });
       } catch (e) {
-        setError((e as Error).message === "scan" ? `“${f.name}” chỉ có ảnh scan, chưa đọc được chữ.` : (e as Error).message.startsWith("Định dạng") ? (e as Error).message : explain(e));
+        setError((e as Error).message === "scan" ? `“${f.name}” chỉ có ảnh scan, chưa đọc được chữ.` : (e as Error).message.startsWith("Định dạng") ? (e as Error).message : `Chưa lưu được “${f.name}”: ${explain(e)}`);
       }
     }
     setBusy(null);

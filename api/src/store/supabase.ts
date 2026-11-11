@@ -23,14 +23,14 @@ export class SupabaseStore implements Store {
   async getSession(id: string, userId: string): Promise<Session | null> {
     const { data: row, error } = await this.db
       .from("learning_sessions").select("*").eq("id", id).eq("user_id", userId).maybeSingle();
-    if (error) throw error;
+    if (error) throw asError(error);
     if (!row) return null;
     const [msgs, gaps, ev] = await Promise.all([
       this.db.from("messages").select("*").eq("session_id", id).eq("user_id", userId).order("seq", { ascending: true }),
       this.db.from("knowledge_gaps").select("*").eq("session_id", id).eq("user_id", userId),
       this.db.from("evidence").select("*").eq("session_id", id).eq("user_id", userId).order("created_at", { ascending: true }),
     ]);
-    for (const r of [msgs, gaps, ev]) if (r.error) throw r.error;
+    for (const r of [msgs, gaps, ev]) if (r.error) throw asError(r.error);
     return {
       id: row.id,
       userId: row.user_id,
@@ -57,7 +57,7 @@ export class SupabaseStore implements Store {
     const { data, error } = await this.db
       .from("learning_sessions").select("id, mode, topic, phase, status, updated_at")
       .eq("user_id", userId).order("updated_at", { ascending: false }).limit(limit);
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).map((r: any) => ({ id: r.id, mode: r.mode, topic: r.topic, phase: r.phase, status: r.status, updatedAt: r.updated_at }));
   }
 
@@ -68,19 +68,19 @@ export class SupabaseStore implements Store {
       status: s.status, state: s.state, settings: s.settings, document_ids: s.documentIds, rubric: s.rubric, summary: s.state.summary,
       created_at: s.createdAt, updated_at: s.updatedAt,
     });
-    if (error) throw error;
+    if (error) throw asError(error);
 
     // Phiên MVP ≤ ~26 tin nhắn ⇒ upsert toàn bộ là chấp nhận được.
     // Thứ tự quan trọng: messages trước (evidence có FK tới message_id).
     const m = await this.db.from("messages").upsert(
       s.messages.map((m, i) => ({ id: m.id, session_id: s.id, user_id: u, seq: i, role: m.role, text: m.text, action: m.action, intent: m.intent, citations: m.citations ?? [], web_citations: m.webCitations ?? [], created_at: m.createdAt })),
     );
-    if (m.error) throw m.error;
+    if (m.error) throw asError(m.error);
     if (s.gaps.length) {
       const g = await this.db.from("knowledge_gaps").upsert(
         s.gaps.map((g) => ({ id: g.id, session_id: s.id, user_id: u, concept: g.concept, status: g.status, support_level: g.supportLevel })),
       );
-      if (g.error) throw g.error;
+      if (g.error) throw asError(g.error);
     }
     if (s.evidence.length) {
       const e = await this.db.from("evidence").upsert(
@@ -90,42 +90,42 @@ export class SupabaseStore implements Store {
           criterion_id: e.criterionId, source_citation: e.sourceCitation, context: e.context, created_at: e.createdAt,
         })),
       );
-      if (e.error) throw e.error;
+      if (e.error) throw asError(e.error);
     }
   }
 
   async saveCard(sessionId: string, userId: string, card: MirrorCard) {
     const { error } = await this.db.from("session_cards").upsert({ session_id: sessionId, user_id: userId, card_json: card });
-    if (error) throw error;
+    if (error) throw asError(error);
   }
   async getCard(sessionId: string, userId: string) {
     const { data, error } = await this.db.from("session_cards").select("card_json").eq("session_id", sessionId).eq("user_id", userId).maybeSingle();
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data?.card_json as MirrorCard) ?? null;
   }
 
   async getTurnResult(sessionId: string, clientTurnId: string) {
     const { data, error } = await this.db.from("turn_requests").select("response")
       .eq("session_id", sessionId).eq("client_turn_id", clientTurnId).maybeSingle();
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data?.response as TurnResult) ?? null;
   }
   async saveTurnResult(sessionId: string, clientTurnId: string, r: TurnResult) {
     const { data: s } = await this.db.from("learning_sessions").select("user_id").eq("id", sessionId).maybeSingle();
     const { error } = await this.db.from("turn_requests").upsert({ session_id: sessionId, client_turn_id: clientTurnId, user_id: s?.user_id, response: r });
-    if (error) throw error;
+    if (error) throw asError(error);
   }
 
   async countSessionsSince(userId: string, sinceIso: string) {
     const { count, error } = await this.db.from("learning_sessions").select("id", { count: "exact", head: true })
       .eq("user_id", userId).gte("created_at", sinceIso);
-    if (error) throw error;
+    if (error) throw asError(error);
     return count ?? 0;
   }
 
   async getSettings(userId: string): Promise<UserSettings | null> {
     const { data, error } = await this.db.from("user_settings").select("*").eq("user_id", userId).maybeSingle();
-    if (error) throw error;
+    if (error) throw asError(error);
     if (!data) return null;
     return {
       aiStyle: data.ai_style, supportPreference: data.support_preference,
@@ -137,27 +137,27 @@ export class SupabaseStore implements Store {
       user_id: userId, ai_style: s.aiStyle, support_preference: s.supportPreference,
       challenge_level: s.challengeLevel, self_assessment: s.selfAssessment, updated_at: new Date().toISOString(),
     });
-    if (error) throw error;
+    if (error) throw asError(error);
   }
 
   // ---- Nguồn web chính thống (bảng ở migration 0004; không mở cho client đọc) ----
   async getWebCache(key: string, nowIso: string): Promise<WebPassage[] | null> {
     const { data, error } = await this.db.from("web_source_cache").select("results,expires_at").eq("key", key).gt("expires_at", nowIso).maybeSingle();
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data?.results as WebPassage[] | undefined) ?? null;
   }
   async putWebCache(key: string, passages: WebPassage[], fetchedAtIso: string, expiresAtIso: string) {
     const { error } = await this.db.from("web_source_cache").upsert({ key, results: passages, fetched_at: fetchedAtIso, expires_at: expiresAtIso });
-    if (error) throw error;
+    if (error) throw asError(error);
   }
   async countWebSearchesSince(userId: string, sinceIso: string) {
     const { count, error } = await this.db.from("web_search_log").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", sinceIso);
-    if (error) throw error;
+    if (error) throw asError(error);
     return count ?? 0;
   }
   async logWebSearch(userId: string, atIso: string) {
     const { error } = await this.db.from("web_search_log").insert({ user_id: userId, created_at: atIso });
-    if (error) throw error;
+    if (error) throw asError(error);
   }
 
   async logUsage(e: UsageEntry) {
@@ -172,7 +172,7 @@ export class SupabaseStore implements Store {
   async deleteUserData(userId: string, scope: "sessions" | "all") {
     // ON DELETE CASCADE xoá messages/gaps/evidence/cards/turn_requests theo session.
     const { error } = await this.db.from("learning_sessions").delete().eq("user_id", userId);
-    if (error) throw error;
+    if (error) throw asError(error);
     if (scope === "all") {
       await this.db.from("user_settings").delete().eq("user_id", userId);
       await this.db.from("ai_call_usage").delete().eq("user_id", userId);
@@ -191,7 +191,7 @@ export class SupabaseStore implements Store {
       id: doc.id, user_id: doc.userId, title: doc.title, kind: doc.kind, origin: doc.origin, page_count: doc.pageCount,
       chunk_count: doc.chunkCount, embedded: doc.embedded, content_hash: doc.contentHash, warnings: doc.warnings, created_at: doc.createdAt,
     });
-    if (d.error) throw d.error;
+    if (d.error) throw asError(d.error);
     for (let i = 0; i < chunks.length; i += 200) {
       const r = await this.db.from("chunks").insert(
         chunks.slice(i, i + 200).map((c) => ({
@@ -202,30 +202,30 @@ export class SupabaseStore implements Store {
       );
       if (r.error) {
         await this.db.from("documents").delete().eq("id", doc.id); // không để tài liệu dở dang
-        throw r.error;
+        throw asError(r.error);
       }
     }
   }
 
   async listDocuments(userId: string) {
     const { data, error } = await this.db.from("documents").select("*").eq("user_id", userId).order("created_at", { ascending: false });
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).map(docFromRow);
   }
   async getDocuments(userId: string, ids: string[]) {
     if (!ids.length) return [];
     const { data, error } = await this.db.from("documents").select("*").eq("user_id", userId).in("id", ids);
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).map(docFromRow);
   }
   async findDocumentByHash(userId: string, hash: string) {
     const { data, error } = await this.db.from("documents").select("*").eq("user_id", userId).eq("content_hash", hash).maybeSingle();
-    if (error) throw error;
+    if (error) throw asError(error);
     return data ? docFromRow(data) : null;
   }
   async deleteDocument(userId: string, id: string) {
     const { data, error } = await this.db.from("documents").delete().eq("user_id", userId).eq("id", id).select("id");
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).length > 0;
   }
   async listChunks(userId: string, documentId: string): Promise<Chunk[]> {
@@ -234,7 +234,7 @@ export class SupabaseStore implements Store {
       .select("id,document_id,ordinal,page,heading,text,search_text,suspicious")
       .eq("user_id", userId).eq("document_id", documentId)
       .order("ordinal", { ascending: true }).limit(2000);
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).map((r: any) => ({
       id: r.id, documentId: r.document_id, userId, ordinal: r.ordinal, page: r.page, heading: r.heading, text: r.text,
       searchText: r.search_text, embedding: null, suspicious: r.suspicious,
@@ -242,12 +242,12 @@ export class SupabaseStore implements Store {
   }
   async countGraphBuildsSince(userId: string, sinceIso: string) {
     const { count, error } = await this.db.from("graph_build_log").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", sinceIso);
-    if (error) throw error;
+    if (error) throw asError(error);
     return count ?? 0;
   }
   async logGraphBuild(userId: string, atIso: string, pages: number) {
     const { error } = await this.db.from("graph_build_log").insert({ user_id: userId, created_at: atIso, pages });
-    if (error) throw error;
+    if (error) throw asError(error);
   }
 
   async getChunks(userId: string, ids: string[]): Promise<RetrievedChunk[]> {
@@ -257,7 +257,7 @@ export class SupabaseStore implements Store {
       .select("id,document_id,ordinal,page,heading,text,search_text,suspicious,documents(title)")
       .eq("user_id", userId)
       .in("id", ids);
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).map((r: any) => ({
       chunk: {
         id: r.id, documentId: r.document_id, userId, ordinal: r.ordinal, page: r.page, heading: r.heading, text: r.text,
@@ -273,7 +273,7 @@ export class SupabaseStore implements Store {
       p_user: userId, p_doc_ids: documentIds, p_query: searchText(q.text),
       p_embedding: q.embedding ? JSON.stringify(q.embedding) : null, p_k: k,
     });
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).map((r: any) => ({
       chunk: {
         id: r.id, documentId: r.document_id, userId, ordinal: r.ordinal, page: r.page, heading: r.heading, text: r.text,
@@ -287,21 +287,21 @@ export class SupabaseStore implements Store {
   // ---- Thư mục (My Folder) ----
   async listFolders(userId: string): Promise<FolderRecord[]> {
     const { data, error } = await this.db.from("folders").select("*").eq("user_id", userId).order("created_at", { ascending: true });
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).map((r: any) => ({ id: r.id, userId: r.user_id, name: r.name, color: r.color, goal: r.goal ?? null, createdAt: r.created_at }));
   }
   async saveFolder(f: FolderRecord) {
     const { error } = await this.db.from("folders").upsert({ id: f.id, user_id: f.userId, name: f.name, color: f.color, goal: f.goal ?? null, created_at: f.createdAt });
-    if (error) throw error;
+    if (error) throw asError(error);
   }
   async deleteFolder(userId: string, id: string) {
     const { data, error } = await this.db.from("folders").delete().eq("user_id", userId).eq("id", id).select("id");
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).length > 0;
   }
   async setDocumentFolder(userId: string, documentId: string, folderId: string | null) {
     const { data, error } = await this.db.from("documents").update({ folder_id: folderId }).eq("user_id", userId).eq("id", documentId).select("id");
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).length > 0;
   }
 
@@ -309,21 +309,21 @@ export class SupabaseStore implements Store {
     const { error } = await this.db.from("connectors").upsert({
       id: c.id, user_id: c.userId, name: c.name, url: c.url, preset: c.preset, token_enc: c.tokenEnc, tools: c.tools, created_at: c.createdAt,
     });
-    if (error) throw error;
+    if (error) throw asError(error);
   }
   async listConnectors(userId: string) {
     const { data, error } = await this.db.from("connectors").select("*").eq("user_id", userId);
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).map(connFromRow);
   }
   async getConnector(userId: string, id: string) {
     const { data, error } = await this.db.from("connectors").select("*").eq("user_id", userId).eq("id", id).maybeSingle();
-    if (error) throw error;
+    if (error) throw asError(error);
     return data ? connFromRow(data) : null;
   }
   async deleteConnector(userId: string, id: string) {
     const { error } = await this.db.from("connectors").delete().eq("user_id", userId).eq("id", id);
-    if (error) throw error;
+    if (error) throw asError(error);
   }
 
   // ---------- Traces ----------
@@ -334,7 +334,7 @@ export class SupabaseStore implements Store {
   }
   async listTraces(userId: string, sessionId: string) {
     const { data, error } = await this.db.from("agent_traces").select("*").eq("user_id", userId).eq("session_id", sessionId).order("created_at");
-    if (error) throw error;
+    if (error) throw asError(error);
     return (data ?? []).map((r: any) => ({ traceId: r.trace_id, userId: r.user_id, sessionId: r.session_id, name: r.name, summary: r.summary, createdAt: r.created_at }));
   }
 }
@@ -348,4 +348,13 @@ function docFromRow(r: any): LibraryDocument {
 }
 function connFromRow(r: any): ConnectorRecord {
   return { id: r.id, userId: r.user_id, name: r.name, url: r.url, preset: r.preset, tokenEnc: r.token_enc, tools: r.tools, createdAt: r.created_at };
+}
+
+/** PostgrestError của supabase-js là object thường, không phải Error → Hono không bắt được và Worker trả trang lỗi 500 trống. */
+function asError(e: unknown): Error {
+  if (e instanceof Error) return e;
+  const o = (e ?? {}) as { message?: string; code?: string };
+  const err = new Error(o.message || "database_error");
+  (err as Error & { code?: string }).code = o.code;
+  return err;
 }
