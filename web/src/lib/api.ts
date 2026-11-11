@@ -28,7 +28,7 @@ export interface PathPart { id: string; title: string; objective: string; checkp
 export interface LearningPath { level: LearnerLevel; parts: PathPart[]; current: number; stage: "intro" | "teach" | "check" | "done"; generatedBy: "model" | "rules" }
 export interface SessionView {
   id: string; status: "active" | "paused" | "finished"; mode: Mode; phase: string; topic: string; goal: string | null;
-  folderGoal?: string | null; path?: LearningPath | null;
+  folderGoal?: string | null; path?: LearningPath | null; request?: string | null;
   hintLevel: number; turnCount: number; messages: Msg[]; gaps: Gap[]; evidence: Evidence[];
   documentIds: string[]; rubric: Criterion[]; card?: MirrorCard | null; traceId?: string;
 }
@@ -87,6 +87,7 @@ export function explain(e: unknown): string {
     connector_encryption_not_configured: "Máy chủ chưa đặt khoá mã hoá token (CONNECTOR_ENC_KEY).",
     folder_limit: "Đã đạt tối đa 50 thư mục.",
     folder_not_found: "Thư mục không còn tồn tại. Tải lại trang rồi thử lại.",
+    question_rejected: "Nội dung bạn gõ giống chỉ thị cho AI hoặc yêu cầu thông tin hệ thống. Hãy viết câu hỏi hoặc chủ đề bạn muốn học.",
     goal_rejected: "Mục tiêu học có nội dung giống chỉ thị cho AI hoặc yêu cầu thông tin hệ thống. Hãy viết mục tiêu học tập của bạn, ví dụ: “Ôn thi cuối kỳ chương 4–6”.",
     graph_not_configured: "Máy chủ chưa kết nối Neo4j nên chưa tạo được bản đồ khái niệm.",
     graph_daily_limit: "Hôm nay bạn đã tạo bản đồ đủ số lần cho phép. Mai bạn bấm tiếp nhé.",
@@ -116,7 +117,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export const api = {
   config: () => req<AppConfig>("GET", "/api/config"),
-  createSession: (b: { mode: Mode; topic: string; goal?: string; self_confidence?: string | null; document_ids?: string[]; folder_id?: string; level?: LearnerLevel | null }) => req<SessionView>("POST", "/api/sessions", b),
+  createSession: (b: { mode: Mode; topic: string; goal?: string; self_confidence?: string | null; document_ids?: string[]; folder_id?: string; level?: LearnerLevel | null; question?: string | null }) => req<SessionView>("POST", "/api/sessions", b),
   listSessions: () => req<{ items: { id: string; mode: Mode; topic: string; phase: string; status: string; updatedAt: string }[] }>("GET", "/api/sessions"),
   getSession: (id: string) => req<SessionView>("GET", `/api/sessions/${id}`),
   turn: (id: string, b: { text: string; intent?: Intent | null; client_turn_id: string }) => req<TurnResult>("POST", `/api/sessions/${id}/turn`, b),

@@ -10,6 +10,20 @@ export const MODE_PAGE: Record<Mode, { title: string; short: string; path: strin
 };
 export const sessionPath = (s: { id: string; mode: Mode }) => `${MODE_PAGE[s.mode].path}/${s.id}`;
 
+/** Tiêu đề ngắn cho danh sách phiên, rút từ câu người học gõ (câu đầy đủ vẫn gửi riêng cho AI). */
+export function deriveTitle(text: string, max = 80): string {
+  const first = text.trim().split(/\n+/)[0]!.replace(/\s+/g, " ").trim();
+  if (first.length <= max) return first;
+  const cut = first.slice(0, max);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max - 15)).replace(/[,;:–-]+$/, "")}…`;
+}
+
+/** Gợi ý trong ô nhập theo cách học. */
+export const ASK_PLACEHOLDER: Record<Mode, string> = {
+  reunderstand: "Ví dụ: Dạng chuẩn 3 (3NF) — hoặc: em hay nhầm 2NF với 3NF, nhất là phụ thuộc bắc cầu",
+  explore: "Ví dụ: Vì sao đánh chỉ mục giúp truy vấn nhanh hơn?",
+};
+
 /* ---------- bộ nhớ đệm dùng chung giữa các trang (30 giây) ---------- */
 let cache: { at: number; sessions: SessionItem[]; docs: LibraryDoc[]; folders: Folder[] } | null = null;
 const detailCache = new Map<string, { at: string; d: SessionDetail }>();

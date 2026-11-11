@@ -54,6 +54,8 @@ const CreateSessionBody = z.object({
   source_text: z.string().max(20_000).optional().nullable(),
   document_ids: z.array(z.string().uuid()).max(5).optional(),
   folder_id: z.string().uuid().optional().nullable(),
+  /** Câu hỏi đầy đủ người học gõ (topic là tiêu đề rút gọn để hiện trong danh sách). */
+  question: z.string().trim().max(1000).optional().nullable(),
   /** Khám phá "học từ đầu": trình độ → dàn ý + điểm kiểm tra. */
   level: z.enum(["beginner", "some", "review"]).optional().nullable(),
 });
@@ -193,6 +195,8 @@ export function createApp(over: AppOverrides = {}) {
     const { userId, store } = c.var;
     const env = c.env ?? {};
 
+    // Câu hỏi đi vào prompt của mọi lượt → cùng lớp chặn với mục tiêu thư mục (chỉ thị cài cắm, đòi chấm hộ, đòi bí mật).
+    if (body.data.question && goalProblem(body.data.question, 1000)) return c.json({ error: "question_rejected" }, 422);
     const since = new Date(); since.setUTCHours(0, 0, 0, 0);
     const used = await store.countSessionsSince(userId, since.toISOString());
     const limit = num(env.LIMIT_SESSIONS_PER_DAY, 3);
@@ -230,7 +234,7 @@ export function createApp(over: AppOverrides = {}) {
       let session = createSession({
         userId, mode: body.data.mode, topic: body.data.topic, goal: body.data.goal ?? null, folderGoal,
         selfConfidence: settings.selfAssessment ? body.data.self_confidence ?? null : null,
-        documentIds: docIds, settings, level: body.data.mode === "explore" ? body.data.level ?? null : null,
+        documentIds: docIds, settings, level: body.data.mode === "explore" ? body.data.level ?? null : null, request: body.data.question ?? null,
       });
       trace.data.sessionId = session.id;
       if (session.state.path) {
@@ -371,9 +375,9 @@ export function createApp(over: AppOverrides = {}) {
   });
   const publicFolder = (f: { id: string; name: string; color: string; goal?: string | null; createdAt: string }) => ({ id: f.id, name: f.name, color: f.color, goal: f.goal ?? null, createdAt: f.createdAt });
   /** Mục tiêu học đi vào prompt → chặn chỉ thị cài cắm / đòi bí mật ngay khi lưu (cùng lớp guardrail với tin nhắn). */
-  const goalProblem = (goal: string | null | undefined) => {
+  const goalProblem = (goal: string | null | undefined, maxChars = 500) => {
     if (!goal) return null;
-    const v = checkUserInput(goal, { maxChars: 500, hasIntent: false });
+    const v = checkUserInput(goal, { maxChars, hasIntent: false });
     return v.kind !== "ok" || v.flags.some((f) => f === "prompt_injection" || f === "grading_manipulation") ? "goal_rejected" : null;
   };
 
@@ -666,6 +670,7 @@ function publicSession(s: Session) {
     goal: s.state.goal,
     folderGoal: s.state.folderGoal ?? null,
     path: s.state.path ?? null,
+    request: s.state.request ?? null,
     hintLevel: s.state.hintLevel,
     turnCount: s.state.turnCount,
     messages: s.messages.map((m) => ({ id: m.id, role: m.role, text: m.text, action: m.action, citations: m.citations ?? [], webCitations: m.webCitations ?? [] })),

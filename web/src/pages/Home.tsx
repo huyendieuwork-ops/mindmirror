@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, explain, type LearnerLevel, type Mode } from "../lib/api";
 import { LEVELS } from "../lib/labels";
-import { invalidate, MODE_PAGE, sessionPath, useLearningData } from "../lib/data";
+import { ASK_PLACEHOLDER, deriveTitle, invalidate, MODE_PAGE, sessionPath, useLearningData } from "../lib/data";
 import { Card, Empty, FOLDER_TONE, Icon, SelectBox, timeAgo } from "../components/ui";
 
 const MODES: { mode: Mode; title: string; text: string; icon: "check" | "compass" }[] = [
@@ -37,9 +37,12 @@ export default function Home({ name }: { name: string }) {
     if (!topic.trim() || starting) return;
     setStarting(true); setError(null);
     try {
-      const s = await api.createSession({ mode, topic: topic.trim(), document_ids: folderDocs.slice(0, 5).map((d) => d.id), folder_id: current?.id, level: mode === "explore" && level !== "free" ? level : null });
+      const q = topic.trim();
+      const free = mode === "explore" && level === "free";
+      const s = await api.createSession({ mode, topic: deriveTitle(q), question: q, document_ids: folderDocs.slice(0, 5).map((d) => d.id), folder_id: current?.id, level: mode === "explore" && level !== "free" ? level : null });
       invalidate();
-      nav(sessionPath({ id: s.id, mode }));
+      // Hỏi đáp tự do: gửi luôn câu hỏi làm lượt đầu để AI trả lời ngay, không hỏi lại.
+      nav(sessionPath({ id: s.id, mode }), { state: free && s.request ? { autoSend: q } : null });
     } catch (e) { setError(explain(e)); setStarting(false); }
   }
 
@@ -51,10 +54,15 @@ export default function Home({ name }: { name: string }) {
       </div>
 
       <section className="panel space-y-5 p-5 sm:p-7" aria-label="Bắt đầu phiên học">
-        <label className="block text-sm font-semibold text-ink/80">Chủ đề
-          <input value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={200} placeholder="Ví dụ: Dạng chuẩn 3 (3NF)"
-            onKeyDown={(e) => { if (e.key === "Enter") start(); }}
-            className="mt-2 h-14 w-full rounded-xl border border-line bg-paper/40 px-4 text-lg font-normal text-ink outline-none placeholder:text-muted/70 focus:border-mirror" />
+        <label className="block text-sm font-semibold text-ink/80">Bạn muốn học hoặc hỏi gì?
+          <textarea value={topic} onChange={(e) => setTopic(e.target.value)} maxLength={1000} rows={2} placeholder={ASK_PLACEHOLDER[mode]}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); start(); } }}
+            onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = `${Math.min(t.scrollHeight, 240)}px`; }}
+            className="mt-2 block min-h-[3.5rem] w-full resize-none rounded-xl border border-line bg-paper/40 px-4 py-3 text-lg font-normal leading-snug text-ink outline-none placeholder:text-muted/70 focus:border-mirror" />
+          <span className="mt-1.5 flex justify-between gap-3 text-xs font-normal text-muted">
+            <span>Gõ một chủ đề, một câu hỏi, hoặc chỗ bạn đang vướng. Shift + Enter để xuống dòng.</span>
+            {topic.length > 800 && <span>{topic.length}/1000</span>}
+          </span>
         </label>
 
         <div role="radiogroup" aria-label="Cách học" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
