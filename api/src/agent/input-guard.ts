@@ -32,6 +32,8 @@ const GRADING: RegExp[] = [
 const SECRET: RegExp[] = [
   /(api[\s_-]?key|access[\s_-]?token|service[\s_-]?role|secret[\s_-]?key|mật khẩu (cơ sở dữ liệu|database|admin)|khoá bí mật|khóa bí mật)/i,
   /(biến môi trường|environment variables?|\.env\b|GEMINI_API_KEY|SUPABASE_)/i,
+  // Trật tự tiếng Việt ("khoá API", "mã API", "token API") — "khóa" trong CSDL (khóa chính, khóa ngoại) không bị bắt.
+  /\b(khoá|khóa|key|mã|token)\s+(api|truy cập)\b/i,
 ];
 
 const OTHER_USER: RegExp[] = [
