@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, explain, type LearnerLevel, type Mode, type Settings } from "../lib/api";
 import { LEVELS } from "../lib/labels";
-import { invalidate, MODE_PAGE, sessionPath, useLearningData } from "../lib/data";
+import { ASK_PLACEHOLDER, deriveTitle, invalidate, MODE_PAGE, sessionPath, useLearningData } from "../lib/data";
 import { Logo } from "../components/Layout";
 import { Icon, PageHeader, SelectBox, timeAgo } from "../components/ui";
 
@@ -44,9 +44,10 @@ export default function Learn({ mode }: { mode: Mode }) {
     setStarting(true); setError(null);
     try {
       const folderId = source !== "none" && source !== "custom" ? source : undefined;
-      const s = await api.createSession({ mode, topic: t.trim(), goal: goal.trim() || undefined, self_confidence: conf, document_ids: documentIds, folder_id: folderId, level: mode === "explore" && level !== "free" ? level : null });
+      const q = t.trim();
+      const s = await api.createSession({ mode, topic: deriveTitle(q), question: q, goal: goal.trim() || undefined, self_confidence: conf, document_ids: documentIds, folder_id: folderId, level: mode === "explore" && level !== "free" ? level : null });
       invalidate();
-      nav(sessionPath({ id: s.id, mode }));
+      nav(sessionPath({ id: s.id, mode }), { state: mode === "explore" && level === "free" && s.request ? { autoSend: q } : null });
     } catch (e) { setError(explain(e)); setStarting(false); }
   }
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length < 5 ? [...p, id] : p));
@@ -116,8 +117,8 @@ export default function Learn({ mode }: { mode: Mode }) {
             </details>
             {error && <p className="rounded-lg bg-rust/10 px-4 py-2.5 text-sm text-rust">{error}</p>}
             <div className="flex items-end gap-2 rounded-2xl border border-line bg-sheet p-2 shadow-sm focus-within:border-mirror">
-              <textarea value={topic} onChange={(e) => setTopic(e.target.value)} rows={2} maxLength={200}
-                placeholder={mode === "reunderstand" ? "Nhập chủ đề bạn muốn kiểm tra…" : "Nhập câu hỏi hoặc chủ đề bạn muốn khám phá…"}
+              <textarea value={topic} onChange={(e) => setTopic(e.target.value)} rows={2} maxLength={1000}
+                placeholder={ASK_PLACEHOLDER[mode]}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); start(); } }}
                 className="max-h-40 flex-1 resize-none bg-transparent px-3 py-2 text-[0.95rem] outline-none placeholder:text-muted/70" />
               <button onClick={() => start()} disabled={!topic.trim() || starting} aria-label="Bắt đầu"
