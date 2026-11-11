@@ -45,7 +45,7 @@ EMBED_DIMS = "768"
 # Observability: metadata (mặc định, không ghi nội dung học) | redacted | full
 TRACE_CONTENT = "metadata"
 TRACE_CONSOLE = "false"
-LANGFUSE_HOST = "https://cloud.langfuse.com"
+LANGFUSE_HOST = "https://jp.cloud.langfuse.com"   # project Langfuse ở vùng Nhật (jp.cloud.langfuse.com)
 LANGSMITH_PROJECT = "mindmirror"
 # MCP: giới hạn host được phép kết nối (để trống = mọi host https công khai)
 MCP_ALLOWED_HOSTS = ""
