@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, explain, newTurnId, type Assessment, type Citation, type Intent, type LearningPath, type MirrorCard, type Msg, type SessionView, type WebCitation } from "../lib/api";
 import { HINT_LABEL, INTENT_LABEL, LEVELS, PART_STATUS, PATH_INTENT_LABEL, PHASE_LABEL, STATUS_COLOR, STATUS_LABEL } from "../lib/labels";
 import { invalidate, MODE_PAGE, useLearningData } from "../lib/data";
@@ -45,6 +45,17 @@ export default function SessionPage() {
     } catch (e) { setError(explain(e)); }
   }
   useEffect(() => { load(); }, [id]);
+  // Hỏi đáp tự do: câu hỏi gõ ở trang chủ được gửi luôn làm lượt đầu (một lần; xoá state để tải lại trang không gửi lại).
+  const location = useLocation();
+  const navigate = useNavigate();
+  const autoSent = useRef(false);
+  useEffect(() => {
+    const q = (location.state as { autoSend?: string } | null)?.autoSend;
+    if (!q || !s || autoSent.current || s.turnCount > 0 || s.status !== "active") return;
+    autoSent.current = true;
+    navigate(location.pathname, { replace: true, state: null });
+    send(q, null);
+  }, [s?.id]);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [s?.messages.length, pending, card]);
 
   async function send(t: string, intent: Intent | null, retryId?: string) {
