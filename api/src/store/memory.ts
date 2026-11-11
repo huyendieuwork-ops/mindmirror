@@ -73,6 +73,16 @@ export class MemoryStore implements Store {
     this.chunks.delete(id);
     return true;
   }
+  async getChunks(userId: string, ids: string[]): Promise<RetrievedChunk[]> {
+    const want = new Set(ids);
+    const out: RetrievedChunk[] = [];
+    for (const list of this.chunks.values())
+      for (const c of list)
+        if (want.has(c.id) && c.userId === userId)
+          out.push({ chunk: c, documentTitle: this.documents.get(c.documentId)?.title ?? "", score: 1, lexicalRank: null, vectorRank: null });
+    return out;
+  }
+
   async searchChunks(userId: string, documentIds: string[], q: ChunkQuery, k: number): Promise<RetrievedChunk[]> {
     const docs = await this.getDocuments(userId, documentIds);
     const titles = new Map(docs.map((d) => [d.id, d.title]));

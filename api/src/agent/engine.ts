@@ -321,8 +321,36 @@ async function runTurnInner(
       return deps.retriever!.search(s.userId, s.documentIds, query, 4, { trace, parent: span, purpose: "turn" });
     });
     if (!retrieved.length) directives.push("Không tìm thấy đoạn tài liệu phù hợp cho lượt này: nếu cần căn cứ thì nói rõ tài liệu của người học chưa đề cập, KHÔNG bịa trích dẫn.");
+  } else if (deps.tools && deps.retriever && text && DOC_REF.test(text)) {
+    // Phiên không gắn tài liệu nhưng người học nhắc tới tài liệu/slide CỦA HỌ → quy trình tự tìm trong thư viện,
+    // không chờ model quyết định (eval ts-01: model thường hỏi lại thay vì gọi công cụ).
+    retrieved = await step("evidence_retrieval", async (span) => {
+      const r = await executeTool("search_learning_materials", { query: text.slice(0, 300), k: 4 }, toolCtx(span, "policy", 0));
+      toolsUsed.push({ name: "search_learning_materials", initiator: "policy", ok: r.ok });
+      span.set({ trigger: "doc_reference", results: r.ok ? r.chunks?.length ?? 0 : null });
+      return r.ok ? r.chunks ?? [] : [];
+    });
+    if (!retrieved.length) directives.push("Người học nhắc tới tài liệu của họ nhưng thư viện không có đoạn phù hợp: nói rõ là chưa tìm thấy trong tài liệu của họ, KHÔNG bịa trích dẫn.");
   } else {
     workflow.push({ step: "evidence_retrieval", ms: 0, status: "skipped", note: "no_session_documents" });
+  }
+
+  // 4a'. Luôn gửi kèm đoạn tài liệu gắn với tiêu chí đang chấm (đã kiểm chứng khi tạo tiêu chí), để khi người học nói SAI
+  // model có sẵn đúng câu cần trích làm căn cứ. Không có đoạn này, phán đoán "sai" bị guardrail hạ xuống "chưa rõ".
+  if (deps.retriever && s.rubric.length) {
+    const gapConcept = s.gaps.find((g) => g.id === s.state.currentGapId)?.concept;
+    const observed = new Set(s.evidence.filter((e) => e.status === "observed" && e.criterionId).map((e) => e.criterionId));
+    const focus = [
+      ...s.rubric.filter((c) => gapConcept && sameConcept(c.concept, gapConcept)),
+      ...s.rubric.filter((c) => !observed.has(c.id)),
+      ...s.rubric,
+    ].filter((c, i, a) => a.indexOf(c) === i).slice(0, 2);
+    const missing = focus.map((c) => c.citation.chunkId).filter((id) => !retrieved.some((r) => r.chunk.id === id));
+    if (missing.length) {
+      const pinned = await deps.retriever.getChunks(s.userId, missing);
+      retrieved.push(...pinned.filter((r) => s.documentIds.includes(r.chunk.documentId)));
+      root.child("rag.rubric_context", "retriever", { purpose: "rubric", method: "by_id", results: pinned.map((r) => r.chunk.page) }).end();
+    }
   }
 
   // 4b. Công cụ cho model: code chỉ MỞ công cụ phù hợp ngữ cảnh, model tự quyết có gọi hay không.
@@ -352,6 +380,8 @@ async function runTurnInner(
         const res = await callTurnModel(deps.core, {
           system: sys, user, allowed: decision.allowedActions, span: llmSpan, budget,
           tools: tools.length ? tools : undefined, toolMode: canCallTools ? "AUTO" : "NONE", exchanges, maxOutputTokens: long ? 1500 : 900,
+          // Rule chấm điểm (Rule 3): Kiểm tra kiến thức có chấm → temperature 0 để nhãn ổn định giữa các lần; Khám phá giữ 0,4.
+          temperature: s.state.mode === "reunderstand" ? 0 : 0.4,
         });
         if (res.kind === "final") {
           llmSpan.set({ model_action: res.output.next_action, repair_attempts: res.attempts - 1, tool_rounds: round, llm_calls: budget.used });
@@ -577,6 +607,7 @@ function answerContext(messages: Message[], userMsgId: string): Evidence["contex
 interface CallOpts {
   system: string; user: string; allowed: Action[]; span: SpanHandle; budget: { used: number; max: number };
   tools?: import("../providers/types").ToolDeclaration[]; toolMode: "AUTO" | "NONE"; exchanges: ToolExchange[]; maxOutputTokens: number;
+  temperature: number;
 }
 type CallOutcome =
   | { kind: "final"; output: TurnOutput; provider: string; model: string; attempts: number }
@@ -590,7 +621,7 @@ async function callTurnModel(router: ModelRouter, o: CallOpts): Promise<CallOutc
   };
   let res;
   try {
-    res = await gen({ system: o.system, user: o.user, maxOutputTokens: o.maxOutputTokens, purpose: o.exchanges.length ? "turn_after_tools" : "turn" });
+    res = await gen({ system: o.system, user: o.user, maxOutputTokens: o.maxOutputTokens, temperature: o.temperature, purpose: o.exchanges.length ? "turn_after_tools" : "turn" });
   } catch (e) {
     if (e instanceof AgentUnavailableError) throw e;
     throw new AgentUnavailableError((e as Error).message);
@@ -608,6 +639,7 @@ async function callTurnModel(router: ModelRouter, o: CallOpts): Promise<CallOutc
             system: o.system,
             user: `${o.user}\n\nLần trước bạn chọn next_action="${first.next_action}" — KHÔNG hợp lệ. Viết lại toàn bộ lượt với next_action thuộc ${JSON.stringify(o.allowed)}.`,
             maxOutputTokens: o.maxOutputTokens,
+            temperature: o.temperature,
             purpose: "repair",
           })
         : await gen({

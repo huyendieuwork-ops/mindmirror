@@ -89,6 +89,8 @@ export interface Store {
   saveFolder?(f: FolderRecord): Promise<void>;
   deleteFolder?(userId: string, id: string): Promise<boolean>;
   setDocumentFolder?(userId: string, documentId: string, folderId: string | null): Promise<boolean>;
+  /** Lấy đúng các đoạn theo id (chỉ của userId) — dùng để luôn gửi kèm đoạn tài liệu gắn với tiêu chí đang chấm. */
+  getChunks?(userId: string, ids: string[]): Promise<RetrievedChunk[]>;
   /** Tìm kiếm lai (từ khoá + vector) CHỈ trong tài liệu của userId. */
   searchChunks(userId: string, documentIds: string[], q: ChunkQuery, k: number): Promise<RetrievedChunk[]>;
 

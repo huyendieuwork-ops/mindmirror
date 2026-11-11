@@ -20,6 +20,12 @@ function rememberQueryEmbedding(key: string, v: number[]) {
 export class Retriever {
   constructor(private store: Store, private embedder: Embedder | null) {}
 
+  /** Đoạn theo id (chỉ của userId). Store không hỗ trợ → []. */
+  async getChunks(userId: string, ids: string[]): Promise<RetrievedChunk[]> {
+    if (!ids.length || !this.store.getChunks) return [];
+    try { return await this.store.getChunks(userId, ids); } catch { return []; }
+  }
+
   async search(
     userId: string, documentIds: string[], query: string, k = 4,
     opts: { trace?: Trace; parent?: SpanHandle | null; purpose?: string } = {},

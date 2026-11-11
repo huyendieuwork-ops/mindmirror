@@ -205,6 +205,23 @@ export class SupabaseStore implements Store {
     if (error) throw error;
     return (data ?? []).length > 0;
   }
+  async getChunks(userId: string, ids: string[]): Promise<RetrievedChunk[]> {
+    if (!ids.length) return [];
+    const { data, error } = await this.db
+      .from("chunks")
+      .select("id,document_id,ordinal,page,heading,text,search_text,suspicious,documents(title)")
+      .eq("user_id", userId)
+      .in("id", ids);
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({
+      chunk: {
+        id: r.id, documentId: r.document_id, userId, ordinal: r.ordinal, page: r.page, heading: r.heading, text: r.text,
+        searchText: r.search_text, embedding: null, suspicious: r.suspicious,
+      },
+      documentTitle: (Array.isArray(r.documents) ? r.documents[0]?.title : r.documents?.title) ?? "", score: 1, lexicalRank: null, vectorRank: null,
+    }));
+  }
+
   async searchChunks(userId: string, documentIds: string[], q: ChunkQuery, k: number): Promise<RetrievedChunk[]> {
     if (!documentIds.length) return [];
     const { data, error } = await this.db.rpc("match_chunks", {

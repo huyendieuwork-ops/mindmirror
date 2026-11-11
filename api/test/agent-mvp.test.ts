@@ -159,6 +159,51 @@ describe("RAG + tool calling", () => {
   });
 });
 
+describe("Đợt 1: tự tìm tài liệu (ts-01) và quy tắc chấm điểm", () => {
+  it("phiên KHÔNG gắn tài liệu, người học nhắc slide của mình → quy trình tự gọi search_learning_materials, đoạn tài liệu vào prompt", async () => {
+    const { store, retriever } = await library();
+    const { p, router } = scripted([
+      (req: any) => {
+        const alias = /<source id="(S\d+)"[^>]*page="44"/.exec(req.user)?.[1] ?? "S1";
+        return turnOut({ assistant_text: `Slide của bạn nói 2NF cần phụ thuộc đầy đủ vào khóa [${alias}]. Bạn thử giải thích "đầy đủ" nghĩa là gì?`, source_citations: [{ source: alias, quote: "mọi thuộc tính không khóa đều phụ thuộc đầy đủ vào khóa chính" }] });
+      },
+    ]);
+    const s0 = createSession({ userId: U, mode: "reunderstand", topic: "2NF" }, { id: seqId });
+    const { result } = await runTurn(s0, { text: "Trong slide của em, 2NF được định nghĩa thế nào? Em nghĩ là không có nhóm lặp." }, { core: router, id: seqId, retriever, tools: { store } });
+    expect(result.toolsUsed).toContainEqual({ name: "search_learning_materials", initiator: "policy", ok: true });
+    expect(p.calls).toHaveLength(1);                 // không tốn thêm lời gọi model
+    expect(p.calls[0]!.user).toMatch(/<source id="S1"/);
+    expect(result.citations[0]!.page).toBe(44);
+  });
+
+  it("không nhắc tài liệu → không tự tìm (không tốn truy vấn thừa)", async () => {
+    const { store, retriever } = await library();
+    const { router } = scripted([turnOut()]);
+    const s0 = createSession({ userId: U, mode: "explore", topic: "Quang hợp" }, { id: seqId });
+    const { result } = await runTurn(s0, { text: "Vì sao lá cây có màu xanh?" }, { core: router, id: seqId, retriever, tools: { store } });
+    expect((result.toolsUsed ?? []).filter((t) => t.initiator === "policy")).toHaveLength(0);
+  });
+
+  it("Rule 3: Kiểm tra kiến thức gọi Gemini với temperature 0, Khám phá giữ 0,4", async () => {
+    const a = scripted([turnOut()]);
+    await runTurn(createSession({ userId: U, mode: "reunderstand", topic: "SQL" }, { id: seqId }), { text: "JOIN là nối bảng" }, { core: a.router, id: seqId });
+    expect(a.p.calls[0]!.temperature).toBe(0);
+    const b = scripted([turnOut()]);
+    await runTurn(createSession({ userId: U, mode: "explore", topic: "SQL" }, { id: seqId }), { text: "JOIN là gì?" }, { core: b.router, id: seqId });
+    expect(b.p.calls[0]!.temperature).toBe(0.4);
+  });
+
+  it("Rule 1: prompt chấm theo thứ tự 4 bước, ý Bắt buộc / Không bắt buộc; planPrompt yêu cầu expectation đúng mẫu", async () => {
+    const { systemPrompt, planPrompt } = await import("../src/agent/prompts");
+    const sys = systemPrompt({ responseStyle: "friendly", challenge: "balanced", thinkFirst: true, selfAssess: false } as any, true, "reunderstand", false);
+    expect(sys).toMatch(/S4\. CHẤM MỖI TIÊU CHÍ/);
+    expect(sys).toMatch(/Thiếu ≠ sai/);
+    expect(sys).toMatch(/S6\. Đã "observed" nhưng còn thiếu ý "Không bắt buộc": GIỮ "observed"/);
+    expect(systemPrompt({} as any, false, "explore", false)).not.toMatch(/S6\./);
+    expect(planPrompt("2NF", null, []).system).toMatch(/Bắt buộc: <ý 1>; <ý 2>\. Không bắt buộc: <ý phụ>\./);
+  });
+});
+
 describe("Guardrails", () => {
   it("tool từ chối tài liệu của người khác (không lộ là có tồn tại)", async () => {
     const { store, document, retriever } = await library(V); // tài liệu thuộc V

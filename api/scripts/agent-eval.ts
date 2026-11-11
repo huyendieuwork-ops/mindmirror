@@ -260,7 +260,7 @@ async function evalLive(c: any): Promise<[boolean | null, string, { tokens: numb
   if (e.secondObserved) { const ok = results[1]!.newEvidence.some((x) => x.status === "observed") || ["transfer", "reflect"].includes(results[1]!.phase); pass &&= ok; notes.push(`lượt 2 evidence=[${results[1]!.newEvidence.map((x) => x.status)}] phase=${results[1]!.phase}`); }
   if (e.explainStructured) { const ok = /\n\s*[-*]|\|.+\||\*\*/.test(r.assistantText); pass &&= ok; notes.push(`có cấu trúc=${ok}`); }
   if (e.actionIn) { pass &&= e.actionIn.includes(r.action); }
-  if (e.toolCalled) { const ok = !!r.toolsUsed?.some((t) => t.name === e.toolCalled && t.initiator === "model"); pass &&= ok; notes.push(`tools=[${(r.toolsUsed ?? []).map((t) => `${t.name}:${t.initiator}`)}]`); }
+  if (e.toolCalled) { const ok = !!r.toolsUsed?.some((t) => t.name === e.toolCalled && t.ok); pass &&= ok; notes.push(`tools=[${(r.toolsUsed ?? []).map((t) => `${t.name}:${t.initiator}`)}]`); }
   if (e.noTool) { const ok = !r.toolsUsed?.some((t) => t.initiator === "model"); pass &&= ok; notes.push(`tools=[${(r.toolsUsed ?? []).map((t) => t.name)}]`); }
   return [pass, notes.join(" "), { tokens: sumTokens(onCallLog), calls: onCallLog.length, ms: Date.now() - t0 }];
 }
