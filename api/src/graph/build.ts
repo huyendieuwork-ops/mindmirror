@@ -109,15 +109,23 @@ export async function buildConceptGraph(o: BuildOptions): Promise<BuildResult> {
   const model = new RouterChatModel(o.router, { span, maxOutputTokens: 1800, temperature: 0.1 });
   const chain = extractionChain(model);
   const inputs = run.map((b) => ({ passages: passagesBlock(b.chunks) }));
-  const outputs = await chain.batch(inputs, { maxConcurrency: 1 }, { returnExceptions: true });
+  // Tuần tự từng lô, bắt lỗi riêng từng lô. (Không dùng batch({returnExceptions}) — RunnableSequence chuyển Error
+  // xuống bước sau và zod với giá trị mặc định biến nó thành "kết quả rỗng hợp lệ", làm trang bị đánh dấu đã đọc.)
+  const outputs: (Extraction & { ok: boolean } | Error)[] = [];
+  for (const input of inputs) {
+    try { outputs.push(await chain.invoke(input)); } catch (e) { outputs.push(e instanceof Error ? e : new Error(String(e))); }
+  }
 
   // 6. Kiểm chứng + gộp.
   const concepts = new Map<string, ConceptNode>();
   const relations: GraphRelation[] = [];
   const mentions: GraphMention[] = [];
   let droppedRel = 0, droppedMen = 0, droppedBatch = 0;
+  const okPages = new Set<string>();
   outputs.forEach((out, i) => {
     if (out instanceof Error || !(out as any).ok) { droppedBatch++; return; }
+    // Chỉ lô đọc thành công mới được đánh dấu "đã đọc" — lô lỗi (429, JSON hỏng) sẽ được đọc lại ở lần bấm sau.
+    for (const c of run[i]!.chunks) okPages.add(pageKey(c.documentId, c.page));
     const ex = out as Extraction;
     const chunks = run[i]!.chunks;
     const alias = (s: string) => chunks[Number(/^S(\d+)$/i.exec(s.trim())?.[1] ?? 0) - 1];
@@ -156,18 +164,18 @@ export async function buildConceptGraph(o: BuildOptions): Promise<BuildResult> {
     await o.graph.write({
       userId: o.userId,
       documents: docs.map((d) => ({ id: d.id, title: d.title })),
-      pages: [...readPages].map((k) => ({ documentId: byPage.get(k)!.documentId, page: byPage.get(k)!.page })),
+      pages: [...okPages].map((k) => ({ documentId: byPage.get(k)!.documentId, page: byPage.get(k)!.page })),
       concepts: keptConcepts, relations, mentions,
     });
   } catch (e) {
     span?.fail(e).end();
     throw new GraphBuildError("graph_unavailable", (e as Error).message);
   }
-  await o.store.logGraphBuild?.(o.userId, now.toISOString(), readPages.size).catch(() => {});
-  const remaining = pending.length - readPages.size;
+  await o.store.logGraphBuild?.(o.userId, now.toISOString(), okPages.size).catch(() => {});
+  const remaining = pending.length - okPages.size;
   span?.set({ concepts: keptConcepts.length, relations: relations.length, mentions: mentions.length, dropped_relations: droppedRel, dropped_mentions: droppedMen, dropped_batches: droppedBatch, remaining_pages: remaining }).end();
   return {
-    processedPages: readPages.size, remainingPages: remaining, totalPages,
+    processedPages: okPages.size, remainingPages: remaining, totalPages,
     concepts: keptConcepts.length, relations: relations.length, mentions: mentions.length,
     dropped: { relations: droppedRel, mentions: droppedMen, batches: droppedBatch }, llmCalls: run.length, done: remaining === 0,
   };

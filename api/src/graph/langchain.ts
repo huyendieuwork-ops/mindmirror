@@ -2,7 +2,7 @@
  * LangChain cho pipeline dựng đồ thị (Đợt 3).
  * RouterChatModel bọc ModelRouter của MindMirror thành ChatModel của LangChain, nên mọi lời gọi vẫn đi qua
  * cùng một chỗ: Gemini (GeoProxy) → Groq dự phòng, đếm token/chi phí, ghi trace, giới hạn tốc độ.
- * Chuỗi trích xuất: ChatPromptTemplate → RouterChatModel → JsonOutputParser → kiểm tra schema (zod) — chạy bằng .batch() tuần tự.
+ * Chuỗi trích xuất: ChatPromptTemplate → RouterChatModel → JsonOutputParser → kiểm tra schema (zod) — build.ts gọi .invoke() tuần tự từng lô.
  */
 import { SimpleChatModel, type BaseChatModelParams } from "@langchain/core/language_models/chat_models";
 import type { BaseMessage } from "@langchain/core/messages";
@@ -65,6 +65,7 @@ export function extractionChain(model: RouterChatModel) {
     model,
     new JsonOutputParser(),
     RunnableLambda.from((raw: unknown): Extraction & { ok: boolean } => {
+      if (raw === null || typeof raw !== "object" || Array.isArray(raw) || raw instanceof Error) return { concepts: [], relations: [], mentions: [], ok: false };
       const r = ExtractionSchema.safeParse(raw);
       return r.success ? { ...r.data, ok: true } : { concepts: [], relations: [], mentions: [], ok: false };
     }),
