@@ -14,6 +14,7 @@ import { containsQuote } from "../src/rag/text";
 import { createApp } from "../src/http/app";
 import { graphFixture, fixtureExtractor } from "../eval/graph-fixture";
 import { scripted, seqId, turnOut } from "./helpers";
+import { ProviderError } from "../src/providers/types";
 
 const corpus = JSON.parse(readFileSync("eval/fixtures/csdl-chuan-hoa.json", "utf8"));
 const A = "11111111-1111-4111-8111-111111111111";
@@ -72,6 +73,20 @@ describe("Đợt 3 – pipeline LangChain dựng đồ thị", () => {
     expect(rels).toContain("dạng chuẩn 2→dạng chuẩn 3");
     expect(rels).not.toContain("chỉ mục b-tree→dạng chuẩn boyce codd");
     expect(s.graph.relations.every((r) => r.evidence.chunkId && r.evidence.page)).toBe(true);
+  });
+
+  it("lô đọc lỗi (hết lượt 429) không bị đánh dấu đã đọc → lần bấm sau đọc lại", async () => {
+    const s = await setup();
+    const quota = () => new ProviderError("RESOURCE_EXHAUSTED", 429, "gemini");
+    const { router } = scripted([quota(), quota(), quota(), ...Array.from({ length: 10 }, () => fixtureExtractor())]);
+    const r1 = await buildConceptGraph({ userId: A, documentIds: [s.document.id], store: s.store, graph: s.graph, router, maxPages: 2, maxCalls: 1 });
+    expect(r1.dropped.batches).toBe(1);
+    expect(r1.processedPages).toBe(0);
+    expect((await s.graph.extractedPages(A, [s.document.id])).size).toBe(0);
+    const r2 = await buildConceptGraph({ userId: A, documentIds: [s.document.id], store: s.store, graph: s.graph, router, maxPages: 2, maxCalls: 1 });
+    expect(r2.dropped.batches).toBe(0);
+    expect(r2.processedPages).toBeGreaterThan(0);
+    expect(r2.concepts).toBeGreaterThan(0);
   });
 
   it("tài liệu của người khác → forbidden; giới hạn số lần dựng mỗi ngày", async () => {

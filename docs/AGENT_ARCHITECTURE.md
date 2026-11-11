@@ -123,7 +123,7 @@ Mọi nút đều mang `userId`; mọi câu đọc/ghi đều có điều kiện
 1. Kiểm quyền: mọi `document_ids` (1–5) phải thuộc tài khoản → không thì 403 `forbidden`.
 2. Kiểm hạn mức: `GRAPH_BUILDS_PER_DAY` = 10 lần/người/ngày (bảng `graph_build_log`) → 429.
 3. Lấy các trang **chưa đọc** (Neo4j nhớ trang đã trích), tối đa `GRAPH_MAX_PAGES_PER_BUILD` = 6 trang, gộp thành lô ≤ 4.500 ký tự, tối đa `GRAPH_MAX_CALLS_PER_BUILD` = 3 lần gọi Gemini mỗi lần bấm. Còn trang → nút đổi thành "Đọc tiếp (còn ~N trang)". Cách này giữ hạn mức 500 lượt Gemini/ngày: một tài liệu 30 trang tốn ~15 lượt, chia 5 lần bấm.
-4. **LangChain** (`@langchain/core` 1.3.0, `api/src/graph/langchain.ts`): `ChatPromptTemplate` → `RouterChatModel` (bọc ModelRouter sẵn có: Gemini qua GeoProxy, retry/backoff, trace) → `JsonOutputParser` → kiểm schema zod. Chạy `.batch(..., { maxConcurrency: 1 })` để không dồn request. Model trả khái niệm, quan hệ và **câu căn cứ nguyên văn** kèm mã đoạn `S…`.
+4. **LangChain** (`@langchain/core` 1.3.0, `api/src/graph/langchain.ts`): `ChatPromptTemplate` → `RouterChatModel` (bọc ModelRouter sẵn có: Gemini qua GeoProxy, retry/backoff, trace) → `JsonOutputParser` → kiểm schema zod. Gọi tuần tự từng lô (`.invoke()`, không dồn request); lô lỗi (hết lượt Gemini, JSON hỏng) **không** bị đánh dấu đã đọc — lần bấm sau đọc lại. Model trả khái niệm, quan hệ và **câu căn cứ nguyên văn** kèm mã đoạn `S…`.
 5. Kiểm chứng bằng code: câu căn cứ phải có nguyên văn trong **đúng** đoạn S được trích; quan hệ không có căn cứ hợp lệ hoặc trỏ tới khái niệm không tồn tại → bỏ (đếm vào `dropped`); khái niệm không có căn cứ nào → bỏ.
 6. Ghi Neo4j bằng `MERGE` (idempotent), ghi nhật ký dựng, trả số trang đã đọc / khái niệm / quan hệ / số bị loại.
 
@@ -151,7 +151,9 @@ Mọi nút đều mang `userId`; mọi câu đọc/ghi đều có điều kiện
 - Lợi rõ nhất ở câu kiểu "muốn hiểu 3NF cần ôn gì trước?" (q07: RAG 33%/0% → GraphRAG 100%/100%). Ở chế độ tự tìm hạt giống, q04 và q10 chọn sai khái niệm đích (0% khái niệm nền) — đó là lý do agent chỉ gọi đồ thị khi **đã biết** ý đang vướng.
 - Giới hạn của số liệu: một tài liệu, 10 câu, đồ thị gán tay; chưa đo trên đồ thị do Gemini trích thật (cần Neo4j + hạn mức).
 
-**Nghiệm thu (11 ca `gr-01…11` trong `npm run eval:agent`, offline 11/11):** dựng chỉ khi bấm + giới hạn trang/lời gọi; loại quan hệ có câu căn cứ bịa; tài khoản khác dựng từ tài liệu không phải của mình → `forbidden`; quá hạn mức ngày → từ chối, 0 lời gọi model; hỏi bằng viết tắt "3NF" → nền 2NF + phụ thuộc bắc cầu, trang 45; câu không nêu tên → RAG trước rồi mở rộng; tài khoản khác đọc đồ thị (trực tiếp + MCP) → không thấy gì; căn cứ không còn khớp → loại lúc đọc; Khám phá vướng 2 lượt → gọi đồ thị, hỏi về khái niệm nền, trích dẫn hợp lệ; đồ thị trống → chạy bằng RAG; MCP liệt kê công cụ chỉ-đọc. Ngoài ra 16 unit/integration test trong `test/graph.test.ts` (gồm Neo4jGraphStore với `fetch` giả: câu Cypher luôn có `userId`, đổi `neo4j+s://` → HTTPS, lỗi Neo4j).
+**Kiểm trên production (11/11/2026, sau deploy #25):** `/api/graph/status` → `configured:true, connected:true, kind:neo4j` (Worker kết nối Aura qua Query API). Tài liệu thật 8 trang (Giáo trình CSDL chương 4): bấm "Tạo bản đồ khái niệm" → Gemini + LangChain rút **6 khái niệm, 3 quan hệ có câu căn cứ** (1NF → 2NF tr.44, 2NF → 3NF tr.45, 3NF ~ BCNF tr.46) → bản đồ hiện ở Báo cáo, bấm 3NF thấy khái niệm nền 2NF kèm câu căn cứ và trang. MCP `explore_concept_graph` (concept "3NF") trả khái niệm nền 2NF, `S1`, tr.45; id tài liệu lạ → `forbidden`. Lỗi phát hiện khi kiểm: lần bấm thứ 2 gặp hết lượt Gemini nhưng 2 trang vẫn bị đánh dấu đã đọc với 0 khái niệm (do `batch({returnExceptions})` của LangChain đẩy lỗi xuống bước zod) → đã sửa (gọi từng lô, bắt lỗi riêng) + test hồi quy. Bước Khám phá "vướng 2 lượt" trên production chưa kiểm được vì tài khoản đã dùng hết 3 phiên/ngày.
+
+**Nghiệm thu (11 ca `gr-01…11` trong `npm run eval:agent`, offline 11/11):** dựng chỉ khi bấm + giới hạn trang/lời gọi; loại quan hệ có câu căn cứ bịa; tài khoản khác dựng từ tài liệu không phải của mình → `forbidden`; quá hạn mức ngày → từ chối, 0 lời gọi model; hỏi bằng viết tắt "3NF" → nền 2NF + phụ thuộc bắc cầu, trang 45; câu không nêu tên → RAG trước rồi mở rộng; tài khoản khác đọc đồ thị (trực tiếp + MCP) → không thấy gì; căn cứ không còn khớp → loại lúc đọc; Khám phá vướng 2 lượt → gọi đồ thị, hỏi về khái niệm nền, trích dẫn hợp lệ; đồ thị trống → chạy bằng RAG; MCP liệt kê công cụ chỉ-đọc. Ngoài ra 17 unit/integration test trong `test/graph.test.ts` (gồm Neo4jGraphStore với `fetch` giả: câu Cypher luôn có `userId`, đổi `neo4j+s://` → HTTPS, lỗi Neo4j).
 
 ## 5. Guardrails (đều là code, có test)
 
@@ -180,7 +182,7 @@ Mọi nút đều mang `userId`; mọi câu đọc/ghi đều có điều kiện
 
 ```bash
 cd api
-npm test                                  # 164 unit/integration test
+npm test                                  # 165 unit/integration test
 npm run eval:agent                        # 63 ca offline (11 ca nguồn web, 11 ca đồ thị), deterministic, 0 API call
 npm run eval:graph                        # so sánh RAG thường vs GraphRAG trên 10 câu (offline)
 npm run eval:agent -- --live --max-calls 24   # +12 ca với Gemini thật (cần GEMINI_API_KEY; ts-03/ts-04 tìm web thật), giãn cách 4.2s

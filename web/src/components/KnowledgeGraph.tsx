@@ -41,8 +41,9 @@ export default function KnowledgeGraph({ docs, marks }: { docs: LibraryDoc[]; ma
     setBusy(true); setError(null); setMsg(null);
     try {
       const r = await api.buildGraph(selected);
-      setMsg(r.processedPages === 0 ? "Đã đọc hết các trang của tài liệu đã chọn." :
-        `Đã đọc ${r.processedPages} trang: thêm ${r.concepts} khái niệm, ${r.relations} quan hệ có căn cứ${r.dropped.relations ? ` (bỏ ${r.dropped.relations} quan hệ không tìm thấy câu căn cứ)` : ""}.${r.remainingPages ? ` Còn ${r.remainingPages} trang — bấm tiếp để đọc.` : ""}`);
+      const failed = r.dropped.batches ? ` ${r.dropped.batches} phần chưa đọc được (thường do hết lượt AI hoặc AI trả lời lỗi) — các trang đó sẽ được đọc lại ở lần bấm sau.` : "";
+      setMsg(r.processedPages === 0 ? (failed ? `Chưa đọc được trang nào.${failed}` : "Đã đọc hết các trang của tài liệu đã chọn.") :
+        `Đã đọc ${r.processedPages} trang: thêm ${r.concepts} khái niệm, ${r.relations} quan hệ có căn cứ${r.dropped.relations ? ` (bỏ ${r.dropped.relations} quan hệ không tìm thấy câu căn cứ)` : ""}.${r.remainingPages ? ` Còn ${r.remainingPages} trang — bấm tiếp để đọc.` : ""}${failed}`);
       setView(await api.graph(selected));
     } catch (e) { setError(explain(e)); } finally { setBusy(false); }
   }
