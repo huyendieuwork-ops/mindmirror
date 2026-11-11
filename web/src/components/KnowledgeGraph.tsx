@@ -7,7 +7,7 @@ import { Icon } from "./ui";
 export type ConceptMark = { concept: string; status: "needs" | "solid" };
 
 const norm = (s: string) => s.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
-const keysOf = (name: string) => {
+export const keysOf = (name: string) => {
   const base = norm(name.replace(/\([^)]*\)/g, " "));
   const inner = [...name.matchAll(/\(([^)]*)\)/g)].map((m) => norm(m[1]!));
   return [base, ...inner].filter(Boolean);
