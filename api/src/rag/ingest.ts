@@ -6,6 +6,17 @@ import { fnv1a, NoopTrace, type SpanHandle, type Trace } from "../obs/tracer";
 
 export const INGEST_LIMITS = { maxPages: 400, maxChars: 600_000, maxChunks: 1500 };
 
+/**
+ * Làm sạch văn bản trích từ PDF trước khi lưu: Postgres không nhận ký tự NUL (\u0000) và chuỗi UTF-16 hỏng
+ * (lỗi "unsupported Unicode escape sequence" → 500). Bỏ ký tự điều khiển (trừ tab, xuống dòng, ngắt trang) và surrogate lẻ.
+ */
+export function cleanText(s: string): string {
+  return s
+    .replace(/[\u0000-\u0008\u000B\u000E-\u001F\u007F]/g, " ")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
+    .replace(/[\uFFFE\uFFFF]/g, "");
+}
+
 export class IngestError extends Error {
   constructor(readonly code: "empty" | "too_large" | "scanned_only") { super(code); }
 }
@@ -35,7 +46,7 @@ export async function ingestDocument(input: IngestInput, deps: IngestDeps): Prom
   const trace = deps.trace ?? new NoopTrace();
   const id = deps.id ?? (() => crypto.randomUUID());
   return trace.run("rag.ingest", "chain", deps.parent ?? null, async (span) => {
-    const pages = input.pages.slice(0, INGEST_LIMITS.maxPages + 1);
+    const pages = input.pages.slice(0, INGEST_LIMITS.maxPages + 1).map((p) => ({ ...p, text: cleanText(p.text) }));
     if (pages.length > INGEST_LIMITS.maxPages) throw new IngestError("too_large");
     const total = pages.reduce((a, p) => a + p.text.length, 0);
     if (total > INGEST_LIMITS.maxChars) throw new IngestError("too_large");
@@ -78,7 +89,7 @@ export async function ingestDocument(input: IngestInput, deps: IngestDeps): Prom
     }
 
     const doc: LibraryDocument = {
-      id: docId, userId: input.userId, title: input.title.trim().slice(0, 200) || "Tài liệu", kind: input.kind,
+      id: docId, userId: input.userId, title: cleanText(input.title).trim().slice(0, 200) || "Tài liệu", kind: input.kind,
       origin: input.origin ?? null, pageCount: pages.length, chunkCount: chunks.length, embedded, contentHash, warnings,
       createdAt: new Date().toISOString(),
     };
