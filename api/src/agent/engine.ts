@@ -1,6 +1,6 @@
 import { decide, detectIntent, isSupportAction, DEFAULT_LIMITS, type Limits } from "./policy";
 import { systemPrompt, turnPrompt, summaryPrompt, planPrompt, webSourcesBlock } from "./prompts";
-import { TurnOutputSchema, SummaryOutputSchema, PlanOutputSchema, extractJson, type TurnOutput } from "./schema";
+import { TurnOutputSchema, SummaryOutputSchema, PlanOutputSchema, PathOutputSchema, extractJson, type TurnOutput } from "./schema";
 import { findQuoteSource } from "./evidence";
 import {
   answerOverlap, isRepeatedQuestion, leaksSystemPrompt, redactSecrets, sanitizeAssistantText, stripUnsupportedPraise,
@@ -12,7 +12,7 @@ import type { ToolExchange } from "../providers/types";
 import { buildMirrorCard, sameConcept } from "./mirror-card";
 import type {
   Action, Citation, Criterion, Evidence, Gap, LearningState, Message, RetrievedChunk, Session, SessionMode, TurnResult, UserIntent, UserSettings,
-  WebCitation,
+  WebCitation, LearnerLevel,
 } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import type { ModelRouter } from "../providers/router";
@@ -21,6 +21,7 @@ import { aliasMap, renderCitationMarkers, stripUnlistedLinks, validateCitation, 
 import { keywordQuery, type WebPassage, type WebSearcher } from "../web/search";
 import type { GraphStore } from "../graph/types";
 import { NoopTrace, type SpanHandle, type Trace } from "../obs/tracer";
+import { applyPathOutcome, pathContext, pathDecision, pathFromModel, pathOpening, pathPlanPrompt, rulesPath, type PathTurn } from "./path";
 
 export interface EngineDeps {
   core: ModelRouter;           // Gemini core (+ Groq fallback)
@@ -64,6 +65,8 @@ export interface NewSessionInput {
   selfConfidence?: LearningState["selfConfidence"];
   documentIds?: string[];
   settings?: UserSettings;
+  /** Khám phá "học từ đầu": có trình độ → phiên chạy theo dàn ý + điểm kiểm tra. */
+  level?: LearnerLevel | null;
 }
 
 const uid = () => crypto.randomUUID();
@@ -73,7 +76,8 @@ export function createSession(input: NewSessionInput, deps: Pick<EngineDeps, "no
   const now = (deps.now ?? (() => new Date()))().toISOString();
   const id = deps.id ?? uid;
   const topic = input.topic.trim().slice(0, 200);
-  const opening =
+  const path = input.mode === "explore" && input.level ? rulesPath(topic, input.level) : null;
+  const opening = path ? pathOpening(topic, path) :
     input.mode === "reunderstand"
       ? `Mình cùng nhìn lại “${topic}” nhé. Bạn thử giải thích theo cách bạn đang hiểu xem — không cần chính xác từng chữ. Chỗ nào bạn thấy hay vướng nhất?`
       : `Hay đấy! Về “${topic}”, bạn đang tò mò nhất điều gì — muốn hiểu nguyên lý, xem ví dụ đời thường, hay thử tự đoán xem vì sao trước?`;
@@ -97,6 +101,7 @@ export function createSession(input: NewSessionInput, deps: Pick<EngineDeps, "no
       selfConfidence: input.selfConfidence ?? null,
       summary: "",
       pendingModeSuggestion: null,
+      path,
     },
     gaps: [],
     evidence: [],
@@ -152,6 +157,36 @@ export async function prepareGroundedSession(session: Session, deps: Pick<Engine
       span.set({ plan_error: (e as Error).message });
       s.messages[0]!.text = fallbackOpening;
     }
+    return s;
+  });
+}
+
+/**
+ * Khám phá "học từ đầu": model đề xuất dàn ý theo trình độ (bám tài liệu nếu có) → thay dàn ý dự phòng.
+ * Model lỗi / sai định dạng → giữ dàn ý dự phòng, phiên vẫn chạy.
+ */
+export async function prepareLearningPath(session: Session, deps: Pick<EngineDeps, "core" | "retriever" | "trace">): Promise<Session> {
+  const s = structuredClone(session);
+  const path = s.state.path;
+  if (!path) return s;
+  const trace = deps.trace ?? new NoopTrace();
+  return trace.run("agent.path_plan", "chain", null, async (span) => {
+    let retrieved: RetrievedChunk[] = [];
+    if (deps.retriever && s.documentIds.length) {
+      retrieved = await deps.retriever.search(s.userId, s.documentIds, s.state.topic, 6, { trace, parent: span, purpose: "plan" }).catch(() => []);
+    }
+    try {
+      const p = pathPlanPrompt(s.state.topic, path.level, s.state.folderGoal ?? null, retrieved);
+      const res = await deps.core.generate({ system: p.system, user: p.user, maxOutputTokens: 900, temperature: 0.3, purpose: "plan" }, span);
+      const parsed = PathOutputSchema.safeParse(extractJson(res.text));
+      if (!parsed.success) throw new Error("PATH_SCHEMA");
+      s.state.path = pathFromModel(parsed.data.parts, path.level);
+      span.set({ parts: s.state.path.parts.length, generated_by: "model", retrieved: retrieved.length });
+    } catch (e) {
+      span.set({ path_error: (e as Error).message, generated_by: "rules", retrieved: retrieved.length });
+    }
+    s.messages[0]!.text = pathOpening(s.state.topic, s.state.path!, retrieved[0]?.documentTitle ?? null);
+    s.messages[0]!.action = "suggest_directions";
     return s;
   });
 }
@@ -242,7 +277,13 @@ async function runTurnInner(
   }
 
   // ---------- 3. Policy decision (state machine bằng code) ----------
-  const decision = await step("policy_decision", () => decide(s, intent, limits));
+  const pathTurn: PathTurn | null = pathDecision(s, intent, limits);
+  const decision = await step("policy_decision", (span) => {
+    const d = pathTurn?.decision ?? decide(s, intent, limits);
+    if (!pathTurn && d.kind === "llm" && s.state.path) d.directive = [d.directive, pathContext(s)].filter(Boolean).join(" ");
+    if (s.state.path) span.set({ path_turn: pathTurn?.kind ?? null, path_part: s.state.path.current + 1, path_stage: s.state.path.stage });
+    return d;
+  });
   trace.start("policy.decide", "guardrail", root, {
     kind: decision.kind,
     ...(decision.kind === "llm" ? { allowed_actions: decision.allowedActions, forced_action: decision.forcedAction, target_hint: decision.targetHintLevel } : {}),
@@ -639,7 +680,8 @@ async function runTurnInner(
     st.agentLedRounds = intent ? 0 : st.agentLedRounds + 1;
     st.pendingModeSuggestion = output.suggest_mode_switch && output.suggest_mode_switch !== st.mode ? output.suggest_mode_switch : null;
     st.repeatedQuestion = outGuard.repeated;
-    span.set({ phase: st.phase, hint_level: st.hintLevel, round_on_same_gap: st.roundOnSameGap });
+    if (pathTurn) applyPathOutcome(s, pathTurn.kind, output.checkpoint_passed, observedNow);
+    span.set({ phase: st.phase, hint_level: st.hintLevel, round_on_same_gap: st.roundOnSameGap, ...(st.path ? { path_part: st.path.current + 1, path_stage: st.path.stage, checkpoint_passed: output.checkpoint_passed ?? null } : {}) });
   });
 
   const webCitations = outGuard.rendered.webCitations;
@@ -802,7 +844,11 @@ async function maybeSummarize(s: Session, deps: EngineDeps, parent: SpanHandle):
 function quickRepliesFor(s: Session): UserIntent[] {
   const st = s.state;
   let q: UserIntent[];
-  if (st.phase === "repair") q = ["hint", "give_example", "show_answer", "skip"];
+  const path = st.mode === "explore" ? st.path : null;
+  if (path && path.stage === "check") q = ["hint", "give_example", "show_answer", "skip"];
+  else if (path && path.stage !== "done") q = ["explain_more", "give_example", "skip", "finish"];
+  else if (path) q = ["try", "explain_more", "finish"];
+  else if (st.phase === "repair") q = ["hint", "give_example", "show_answer", "skip"];
   else if (st.phase === "transfer" || st.phase === "reflect") q = ["try", "explain_more", "finish"];
   else if (st.mode === "explore") q = ["explain_more", "give_example", "try", "change_topic", "finish"];
   else q = ["hint", "give_example", "show_answer", "finish"];
@@ -828,6 +874,7 @@ function baseResult(
     citations: [],
     traceId: null,
     modelInfo,
+    path: s.state.path ?? null,
     ...extra,
   };
 }

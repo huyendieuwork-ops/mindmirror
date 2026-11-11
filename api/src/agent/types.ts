@@ -141,6 +141,27 @@ export const DEFAULT_SETTINGS: UserSettings = {
   selfAssessment: true,
 };
 
+/** Khám phá "học từ đầu": trình độ người học tự chọn. */
+export type LearnerLevel = "beginner" | "some" | "review";
+
+export interface PathPart {
+  id: string;              // "P1", "P2"...
+  title: string;
+  objective: string;       // sau phần này người học làm được gì
+  checkpoint: string;      // câu hỏi kiểm tra nhanh cuối phần
+  status: "todo" | "current" | "done" | "review" | "skipped"; // review = đã qua nhưng câu kiểm tra chưa đạt
+  attempts: number;        // số lần trả lời câu kiểm tra chưa đạt
+}
+
+/** Dàn ý buổi học: code điều phối giảng → kiểm tra → sang phần tiếp; LLM chỉ viết lời. */
+export interface LearningPath {
+  level: LearnerLevel;
+  parts: PathPart[];
+  current: number;                                  // chỉ số phần đang học
+  stage: "intro" | "teach" | "check" | "done";       // intro: chưa bắt đầu; teach: lượt tới giảng phần current; check: đã hỏi câu kiểm tra
+  generatedBy: "model" | "rules";
+}
+
 export interface LearningState {
   mode: SessionMode;
   phase: Phase;
@@ -160,6 +181,8 @@ export interface LearningState {
   pendingModeSuggestion: SessionMode | null;
   /** Guardrail: lượt trước agent lặp lại câu hỏi cũ → lượt này phải đổi góc hỏi. */
   repeatedQuestion?: boolean;
+  /** Khám phá "học từ đầu": dàn ý + điểm kiểm tra (null = Khám phá tự do như cũ). */
+  path?: LearningPath | null;
 }
 
 export interface Message {
@@ -256,4 +279,6 @@ export interface TurnResult {
   /** Guardrail đã kích hoạt trong lượt (mã ngắn). */
   guardrails?: string[];
   cardSaved?: boolean;
+  /** Khám phá "học từ đầu": dàn ý sau lượt (null nếu phiên không theo dàn ý). */
+  path?: LearningPath | null;
 }

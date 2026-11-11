@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, explain, type Mode } from "../lib/api";
+import { api, explain, type LearnerLevel, type Mode } from "../lib/api";
+import { LEVELS } from "../lib/labels";
 import { invalidate, MODE_PAGE, sessionPath, useLearningData } from "../lib/data";
 import { Card, Empty, FOLDER_TONE, Icon, SelectBox, timeAgo } from "../components/ui";
 
 const MODES: { mode: Mode; title: string; text: string; icon: "check" | "compass" }[] = [
   { mode: "reunderstand", title: "Kiểm tra hiểu biết", text: "Bạn tự trình bày, AI đặt câu hỏi vào những điểm còn chưa chắc chắn. Không chấm điểm.", icon: "check" },
-  { mode: "explore", title: "Khám phá", text: "Học từ đầu: AI giải thích từ khái niệm cơ bản, kèm ví dụ và nguồn tham khảo.", icon: "compass" },
+  { mode: "explore", title: "Khám phá", text: "Học từ đầu theo dàn ý: AI giải thích từng phần kèm ví dụ, cuối mỗi phần có câu kiểm tra nhanh.", icon: "compass" },
 ];
 
 /** Trang chủ: một ô bắt đầu (chủ đề → cách học → thư mục tài liệu tuỳ chọn), rồi "Tiếp tục học" và danh sách thư mục. */
@@ -17,9 +18,15 @@ export default function Home({ name }: { name: string }) {
   const [topic, setTopic] = useState(params.get("topic") ?? "");
   const [mode, setMode] = useState<Mode>(params.get("mode") === "explore" ? "explore" : "reunderstand");
   const [folder, setFolder] = useState<string>(params.get("folder") ?? "none");
+  const [level, setLevel] = useState<LearnerLevel | "free">((params.get("level") as LearnerLevel | null) ?? "beginner");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { const f = params.get("folder"); if (f) setFolder(f); }, [params]);
+  useEffect(() => {
+    const f = params.get("folder"); if (f) setFolder(f);
+    const t = params.get("topic"); if (t) setTopic(t);
+    const m = params.get("mode"); if (m === "explore" || m === "reunderstand") setMode(m);
+    const l = params.get("level"); if (l === "beginner" || l === "some" || l === "review") setLevel(l);
+  }, [params]);
 
   const first = name.split(/\s+/).slice(-2).join(" ");
   const current = folders.find((f) => f.id === folder) ?? null;
@@ -30,7 +37,7 @@ export default function Home({ name }: { name: string }) {
     if (!topic.trim() || starting) return;
     setStarting(true); setError(null);
     try {
-      const s = await api.createSession({ mode, topic: topic.trim(), document_ids: folderDocs.slice(0, 5).map((d) => d.id), folder_id: current?.id });
+      const s = await api.createSession({ mode, topic: topic.trim(), document_ids: folderDocs.slice(0, 5).map((d) => d.id), folder_id: current?.id, level: mode === "explore" && level !== "free" ? level : null });
       invalidate();
       nav(sessionPath({ id: s.id, mode }));
     } catch (e) { setError(explain(e)); setStarting(false); }
@@ -63,6 +70,24 @@ export default function Home({ name }: { name: string }) {
           })}
         </div>
 
+        {mode === "explore" && (
+          <div>
+            <p className="text-sm font-semibold text-ink/80">Trình độ của bạn với chủ đề này</p>
+            <div role="radiogroup" aria-label="Trình độ" className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
+              {LEVELS.map((l) => {
+                const on = level === l.value;
+                return (
+                  <button key={l.value} role="radio" aria-checked={on} onClick={() => setLevel(l.value)}
+                    className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${on ? "border-mirror bg-mist/60" : "border-line bg-sheet hover:border-mirror/50"}`}>
+                    <span className={`block text-sm font-semibold ${on ? "text-mirror" : "text-ink"}`}>{l.label}</span>
+                    <span className="block text-xs text-muted">{l.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0 space-y-1.5">
             <p className="text-sm font-semibold text-ink/80">Thư mục tài liệu <span className="font-normal text-muted">(không bắt buộc)</span></p>
@@ -77,7 +102,7 @@ export default function Home({ name }: { name: string }) {
           <button onClick={start} disabled={!topic.trim() || starting}
             className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-mirror px-7 font-semibold text-white shadow-sm hover:bg-mirror/90 disabled:opacity-40">
             {starting ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : null}
-            {starting ? (folderDocs.length ? "Đang đọc tài liệu…" : "Đang mở phiên…") : <>Bắt đầu <Icon name="arrowRight" /></>}
+            {starting ? (mode === "explore" && level !== "free" ? "Đang lập dàn ý…" : folderDocs.length ? "Đang đọc tài liệu…" : "Đang mở phiên…") : <>Bắt đầu <Icon name="arrowRight" /></>}
           </button>
         </div>
         {error && <p className="rounded-lg bg-rust/10 px-4 py-2.5 text-sm text-rust">{error}</p>}

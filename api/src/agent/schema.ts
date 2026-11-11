@@ -42,6 +42,8 @@ export const TurnOutputSchema = z.object({
   suggest_mode_switch: z.enum(["explore", "reunderstand"]).nullable().default(null),
   // Trích dẫn cho các nhận xét kiến thức trong assistant_text (đánh dấu [S1] trong lời)
   source_citations: z.array(z.object({ source: z.string().max(6), quote: z.string().min(1).max(400) })).max(4).default([]),
+  // Khám phá "học từ đầu": người học trả lời ĐẠT câu kiểm tra của phần hiện tại chưa (null = lượt này không chấm câu kiểm tra).
+  checkpoint_passed: z.boolean().nullable().optional(),
   // Model tự báo – chỉ lưu tham khảo, KHÔNG dùng để chấm.
   confidence: z.enum(["low", "medium", "high"]).default("medium"),
 });
@@ -79,6 +81,19 @@ export const PlanOutputSchema = z.object({
   opening_question: z.string().min(1).max(600),
 });
 export type PlanOutput = z.infer<typeof PlanOutputSchema>;
+
+export const PathOutputSchema = z.object({
+  parts: z
+    .array(
+      z.object({
+        title: z.string().min(2).max(90),
+        objective: z.string().min(2).max(220),
+        checkpoint: z.string().min(5).max(260),
+      }),
+    )
+    .min(2)
+    .max(6),
+});
 
 export const SummaryOutputSchema = z.object({
   summary: z.string().min(1).max(1200),

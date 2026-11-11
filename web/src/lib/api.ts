@@ -23,15 +23,19 @@ export interface MirrorCard {
   changed: string | null; unresolved: string[]; nextStep: string; insufficientEvidence: boolean;
   assessment: Assessment; generatedBy: "model" | "rules";
 }
+export type LearnerLevel = "beginner" | "some" | "review";
+export interface PathPart { id: string; title: string; objective: string; checkpoint: string; status: "todo" | "current" | "done" | "review" | "skipped"; attempts: number }
+export interface LearningPath { level: LearnerLevel; parts: PathPart[]; current: number; stage: "intro" | "teach" | "check" | "done"; generatedBy: "model" | "rules" }
 export interface SessionView {
   id: string; status: "active" | "paused" | "finished"; mode: Mode; phase: string; topic: string; goal: string | null;
+  folderGoal?: string | null; path?: LearningPath | null;
   hintLevel: number; turnCount: number; messages: Msg[]; gaps: Gap[]; evidence: Evidence[];
   documentIds: string[]; rubric: Criterion[]; card?: MirrorCard | null; traceId?: string;
 }
 export interface TurnResult {
   turnId: string; phase: string; action: string; assistantText: string; hintLevel: number; gaps: Gap[];
   newEvidence: Evidence[]; suggestModeSwitch: Mode | null; quickReplies: Intent[]; isFinished: boolean;
-  card?: MirrorCard; citations: Citation[]; webCitations?: WebCitation[]; sourceTier?: "documents" | "web" | "general" | null;
+  card?: MirrorCard; citations: Citation[]; webCitations?: WebCitation[]; sourceTier?: "documents" | "web" | "general" | null; path?: LearningPath | null;
   traceId: string | null; modelInfo: { provider: string; model: string } | null;
 }
 export interface LibraryDoc { id: string; title: string; kind: string; pageCount: number; chunkCount: number; embedded: boolean; warnings: string[]; createdAt: string; origin: unknown; folderId?: string | null }
@@ -112,7 +116,7 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export const api = {
   config: () => req<AppConfig>("GET", "/api/config"),
-  createSession: (b: { mode: Mode; topic: string; goal?: string; self_confidence?: string | null; document_ids?: string[]; folder_id?: string }) => req<SessionView>("POST", "/api/sessions", b),
+  createSession: (b: { mode: Mode; topic: string; goal?: string; self_confidence?: string | null; document_ids?: string[]; folder_id?: string; level?: LearnerLevel | null }) => req<SessionView>("POST", "/api/sessions", b),
   listSessions: () => req<{ items: { id: string; mode: Mode; topic: string; phase: string; status: string; updatedAt: string }[] }>("GET", "/api/sessions"),
   getSession: (id: string) => req<SessionView>("GET", `/api/sessions/${id}`),
   turn: (id: string, b: { text: string; intent?: Intent | null; client_turn_id: string }) => req<TurnResult>("POST", `/api/sessions/${id}/turn`, b),
@@ -135,6 +139,7 @@ export const api = {
   importItems: (id: string, items: { id: string; title: string }[]) => req<{ results: { item: { id: string; title: string }; document?: LibraryDoc; error?: string }[] }>("POST", `/api/connectors/${id}/import`, { items }),
   settings: () => req<Settings>("GET", "/api/me/settings"),
   saveSettings: (s: Partial<Settings>) => req<Settings>("PATCH", "/api/me/settings", s),
+  usage: () => req<{ sessionsToday: number; sessionsPerDay: number; resetAt: string }>("GET", "/api/me/usage"),
   deleteData: (scope: "sessions" | "all") => req("DELETE", "/api/me/data", { scope, confirm: "XOA" }),
   graphStatus: () => req<GraphStatus>("GET", "/api/graph/status"),
   buildGraph: (documentIds: string[]) => req<GraphBuildResult>("POST", "/api/graph/build", { document_ids: documentIds }),

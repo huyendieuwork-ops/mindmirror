@@ -5,24 +5,38 @@ import { invalidate, pref, setPref } from "../lib/data";
 import { saveTheme, type Theme } from "../lib/theme";
 import { signOut } from "../lib/supabase";
 import type { UserInfo } from "../components/Layout";
-import { Avatar, Btn, Card, Icon, Modal, PageHeader, SelectBox, Toggle, type IconName } from "../components/ui";
+import { Avatar, Btn, Icon, Modal, PageHeader, Toggle, type IconName } from "../components/ui";
 
 const DEFAULT: Settings = { aiStyle: "friendly", supportPreference: "socratic_first", challengeLevel: "balanced", selfAssessment: true };
 export interface NotifyPrefs { gaps: boolean; unfinished: boolean; weekly: boolean }
 export const NOTIFY_DEFAULT: NotifyPrefs = { gaps: true, unfinished: true, weekly: true };
+export type ChatFont = "sm" | "md" | "lg";
 
+const SECTIONS: { id: string; label: string; icon: IconName }[] = [
+  { id: "account", label: "Tài khoản", icon: "user" },
+  { id: "ai", label: "Cách AI hướng dẫn", icon: "chat" },
+  { id: "look", label: "Giao diện", icon: "panel" },
+  { id: "notify", label: "Thông báo", icon: "bell" },
+  { id: "data", label: "Dữ liệu & quyền riêng tư", icon: "lock" },
+];
+
+/** Cài đặt: điều hướng theo nhóm bên trái, mỗi nhóm một khối; lựa chọn ít dùng dạng nút chọn nhanh thay cho danh sách thả xuống. */
 export default function SettingsPage({ user }: { user: UserInfo }) {
   const [s, setS] = useState<Settings | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(pref<Theme>("theme", "light"));
+  const [font, setFont] = useState<ChatFont>(pref<ChatFont>("chatFont", "md"));
   const [notify, setNotify] = useState<NotifyPrefs>({ ...NOTIFY_DEFAULT, ...pref<Partial<NotifyPrefs>>("notify", {}) });
   const [devMode, setDevMode] = useState<boolean>(pref<boolean>("devMode", false));
+  const [usage, setUsage] = useState<{ sessionsToday: number; sessionsPerDay: number; resetAt: string } | null>(null);
   const [del, setDel] = useState<null | "sessions" | "all">(null);
   const [confirmText, setConfirmText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [section, setSection] = useState("account");
 
-  useEffect(() => { api.settings().then(setS).catch((e) => { setError(explain(e)); setS(DEFAULT); }); }, []);
+  useEffect(() => { api.settings().then(setS).catch((e) => { setError(explain(e)); setS(DEFAULT); }); api.usage().then(setUsage).catch(() => {}); }, []);
   useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(null), 2200); return () => clearTimeout(t); }, [saved]);
 
   async function patch(p: Partial<Settings>) {
@@ -46,97 +60,130 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
       setSaved(del === "all" ? "Đã xoá toàn bộ dữ liệu" : "Đã xoá lịch sử học tập");
     } catch (e) { setError(explain(e)); } finally { setBusy(false); }
   }
+  /** Tải dữ liệu của tôi: phiên học (kèm Thẻ Gương), danh sách tài liệu và thư mục — gom ở trình duyệt từ chính API của bạn. */
+  async function exportData() {
+    setExporting(true); setError(null);
+    try {
+      const [list, docs, folders] = await Promise.all([api.listSessions(), api.documents(), api.folders()]);
+      const sessions = [];
+      for (const it of list.items.slice(0, 30)) sessions.push(await api.getSession(it.id).catch(() => it));
+      const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), account: { name: user.name, email: user.email ?? null }, settings: s, folders: folders.items, documents: docs.items, sessions }, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `mindmirror-du-lieu-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      setSaved("Đã tạo tệp dữ liệu");
+    } catch (e) { setError(explain(e)); } finally { setExporting(false); }
+  }
+  const go = (id: string) => { setSection(id); document.getElementById(`set-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); };
 
   const v = s ?? DEFAULT;
+  const left = usage ? Math.max(0, usage.sessionsPerDay - usage.sessionsToday) : null;
+  const resetVN = usage ? new Date(usage.resetAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" }) : "7:00";
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <PageHeader title="Cài đặt" subtitle="Tuỳ chỉnh cách MindMirror trò chuyện, hỗ trợ và nhắc bạn học." actions={
+      <PageHeader title="Cài đặt" subtitle="Tài khoản, cách MindMirror hướng dẫn bạn, giao diện, thông báo và dữ liệu." actions={
         saved ? <span className="inline-flex items-center gap-1.5 rounded-full bg-moss/10 px-3 py-1.5 text-sm font-medium text-moss"><Icon name="check" /> {saved}</span> : null
       } />
       {error && <p className="rounded-lg bg-rust/10 px-4 py-2.5 text-sm text-rust">{error}</p>}
 
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[1fr_20rem]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[14rem_1fr]">
+        <nav aria-label="Nhóm cài đặt" className="flex gap-2 overflow-x-auto lg:sticky lg:top-6 lg:flex-col lg:self-start">
+          {SECTIONS.map((x) => (
+            <button key={x.id} onClick={() => go(x.id)} aria-current={section === x.id}
+              className={`flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm ${section === x.id ? "bg-mist font-semibold text-mirror" : "text-ink/80 hover:bg-mist/50"}`}>
+              <Icon name={x.icon} className="h-4 w-4" /> {x.label}
+            </button>
+          ))}
+        </nav>
+
         <div className="space-y-6">
-          <Card title="Trợ lý học tập" subtitle="Áp dụng cho các phiên mới và lượt trả lời tiếp theo">
-            <div className="divide-y divide-line">
-              <Row icon="chat" title="Phong cách trả lời" desc="Độ dài và giọng điệu của MindMirror.">
-                <SelectBox label="Phong cách trả lời" value={v.aiStyle} disabled={!s} onChange={(x) => patch({ aiStyle: x })} className="w-44"
-                  options={[{ value: "concise", label: "Ngắn gọn" }, { value: "friendly", label: "Vừa phải" }, { value: "academic", label: "Học thuật" }]} />
-              </Row>
-              <Row icon="chart" title="Mức độ thử thách" desc="Câu hỏi phản biện nhẹ nhàng hay đào sâu.">
-                <SelectBox label="Mức độ thử thách" value={v.challengeLevel} disabled={!s} onChange={(x) => patch({ challengeLevel: x })} className="w-44"
-                  options={[{ value: "gentle", label: "Nhẹ nhàng" }, { value: "balanced", label: "Cân bằng" }, { value: "deep", label: "Đào sâu" }]} />
-              </Row>
-              <Row icon="bulb" title="Ưu tiên tự suy nghĩ" desc="Bật: hỏi gợi mở trước khi giải thích. Tắt: linh hoạt đưa giải thích khi bạn cần.">
-                <Toggle label="Ưu tiên tự suy nghĩ" disabled={!s} checked={v.supportPreference === "socratic_first"} onChange={(on) => patch({ supportPreference: on ? "socratic_first" : "flexible" })} />
-              </Row>
-              <Row icon="user" title="Tự đánh giá trước phiên" desc="Hỏi bạn thấy mình đang ở mức nào trước khi Kiểm tra kiến thức.">
-                <Toggle label="Tự đánh giá trước phiên" disabled={!s} checked={v.selfAssessment} onChange={(on) => patch({ selfAssessment: on })} />
-              </Row>
-              <Row icon="book" title="Ngôn ngữ" desc="Ngôn ngữ giao diện và trò chuyện.">
-                <SelectBox label="Ngôn ngữ" value="vi" disabled onChange={() => {}} className="w-44" options={[{ value: "vi", label: "Tiếng Việt" }]} />
-              </Row>
+          <Section id="account" title="Tài khoản">
+            <div className="flex flex-wrap items-center gap-4 pb-4">
+              <Avatar name={user.name} src={user.avatar} size={56} />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-ink">{user.name}</p>
+                {user.email && <p className="truncate text-sm text-muted">{user.email}</p>}
+                <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted"><Icon name="lock" className="h-3.5 w-3.5" /> Đăng nhập bằng Google</p>
+              </div>
+              <Btn onClick={() => signOut()}><Icon name="logout" /> Đăng xuất</Btn>
             </div>
-          </Card>
+            <Row title="Hạn mức hôm nay" desc={`Đặt lại lúc ${resetVN} sáng mỗi ngày (giờ Việt Nam).`}>
+              {usage ? (
+                <div className="w-48">
+                  <p className="text-right text-sm"><b className="text-ink">{left}/{usage.sessionsPerDay}</b> <span className="text-muted">phiên còn lại</span></p>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-paper"><div className="h-full rounded-full bg-mirror" style={{ width: `${Math.round(((left ?? 0) / usage.sessionsPerDay) * 100)}%` }} /></div>
+                </div>
+              ) : <span className="text-sm text-muted">—</span>}
+            </Row>
+          </Section>
 
-          <Card title="Thông báo" subtitle="Hiển thị ở biểu tượng chuông trên thanh công cụ">
-            <div className="divide-y divide-line">
-              <Row icon="bulb" title="Kiến thức cần củng cố" desc="Nhắc khi một phiên còn khái niệm chưa rõ.">
-                <Toggle label="Kiến thức cần củng cố" checked={notify.gaps} onChange={(x) => patchNotify({ gaps: x })} />
-              </Row>
-              <Row icon="clock" title="Phiên học dang dở" desc="Nhắc quay lại phiên chưa kết thúc sau 1 ngày.">
-                <Toggle label="Phiên học dang dở" checked={notify.unfinished} onChange={(x) => patchNotify({ unfinished: x })} />
-              </Row>
-              <Row icon="chart" title="Báo cáo hằng tuần" desc="Tóm tắt số phiên học trong 7 ngày qua.">
-                <Toggle label="Báo cáo hằng tuần" checked={notify.weekly} onChange={(x) => patchNotify({ weekly: x })} />
-              </Row>
-            </div>
-          </Card>
+          <Section id="ai" title="Cách AI hướng dẫn" subtitle="Áp dụng cho các phiên mới và lượt trả lời tiếp theo.">
+            <Row title="Giọng điệu" desc="Độ dài và cách diễn đạt của MindMirror.">
+              <Segmented label="Giọng điệu" value={v.aiStyle} disabled={!s} onChange={(x) => patch({ aiStyle: x })}
+                options={[{ value: "concise", label: "Ngắn gọn" }, { value: "friendly", label: "Vừa phải" }, { value: "academic", label: "Học thuật" }]} />
+            </Row>
+            <Row title="Mức thử thách" desc="Câu hỏi của AI sẽ dễ hay khó tới đâu.">
+              <Segmented label="Mức thử thách" value={v.challengeLevel} disabled={!s} onChange={(x) => patch({ challengeLevel: x })}
+                options={[{ value: "gentle", label: "Nhẹ nhàng" }, { value: "balanced", label: "Cân bằng" }, { value: "deep", label: "Đào sâu" }]} />
+            </Row>
+            <Row title="Ưu tiên tự suy nghĩ" desc="Bật: hỏi gợi mở trước khi giải thích. Tắt: đưa giải thích ngay khi bạn cần.">
+              <Toggle label="Ưu tiên tự suy nghĩ" disabled={!s} checked={v.supportPreference === "socratic_first"} onChange={(on) => patch({ supportPreference: on ? "socratic_first" : "flexible" })} />
+            </Row>
+            <Row title="Tự đánh giá trước phiên" desc="Hỏi bạn đang thấy mình ở mức nào trước khi Kiểm tra hiểu biết.">
+              <Toggle label="Tự đánh giá trước phiên" disabled={!s} checked={v.selfAssessment} onChange={(on) => patch({ selfAssessment: on })} />
+            </Row>
+          </Section>
 
-          <Card title="Giao diện">
-            <div className="divide-y divide-line">
-              <Row icon="panel" title="Chủ đề màu" desc="Sáng, tối hoặc theo hệ thống.">
-                <SelectBox label="Chủ đề màu" value={theme} onChange={(t) => { setTheme(t); saveTheme(t); }} className="w-44"
-                  options={[{ value: "light", label: "Sáng" }, { value: "dark", label: "Tối" }, { value: "system", label: "Theo hệ thống" }]} />
-              </Row>
-              <Row icon="database" title="Chế độ kỹ thuật (demo)" desc="Hiện tab “Agent đã làm gì” trong phiên học: các bước workflow, công cụ, guardrail, token và chi phí ước tính.">
-                <Toggle label="Chế độ kỹ thuật" checked={devMode} onChange={(x) => { setDevMode(x); setPref("devMode", x); setSaved("Đã lưu thay đổi"); }} />
-              </Row>
-            </div>
-          </Card>
+          <Section id="look" title="Giao diện">
+            <Row title="Chủ đề màu" desc="Sáng, tối hoặc theo hệ thống.">
+              <Segmented label="Chủ đề màu" value={theme} onChange={(t) => { setTheme(t); saveTheme(t); setSaved("Đã lưu thay đổi"); }}
+                options={[{ value: "light", label: "Sáng" }, { value: "dark", label: "Tối" }, { value: "system", label: "Hệ thống" }]} />
+            </Row>
+            <Row title="Cỡ chữ trong phiên học" desc="Áp dụng cho lời trò chuyện trong phiên học.">
+              <Segmented label="Cỡ chữ" value={font} onChange={(f) => { setFont(f); setPref("chatFont", f); setSaved("Đã lưu thay đổi"); }}
+                options={[{ value: "sm", label: "Nhỏ" }, { value: "md", label: "Vừa" }, { value: "lg", label: "Lớn" }]} />
+            </Row>
+            <Row title="Chế độ kỹ thuật (demo)" desc="Hiện tab “Agent đã làm gì” trong phiên học: các bước xử lý, công cụ, guardrail, token và chi phí ước tính.">
+              <Toggle label="Chế độ kỹ thuật" checked={devMode} onChange={(x) => { setDevMode(x); setPref("devMode", x); setSaved("Đã lưu thay đổi"); }} />
+            </Row>
+          </Section>
 
-          <Card title="Dữ liệu & quyền riêng tư">
-            <div className="divide-y divide-line">
-              <Row icon="clock" title="Lịch sử học tập" desc="Xem lại toàn bộ phiên đã học.">
-                <Link to="/history" className="inline-flex items-center gap-1 text-sm font-medium text-mirror">Mở lịch sử <Icon name="arrowRight" /></Link>
-              </Row>
-              <Row icon="trash" title="Xoá lịch sử học tập" desc="Xoá mọi phiên học, giữ lại tài liệu và thư mục.">
-                <Btn variant="danger" onClick={() => setDel("sessions")}>Xoá lịch sử</Btn>
-              </Row>
-              <Row icon="lock" title="Xoá toàn bộ dữ liệu" desc="Xoá phiên học, tài liệu, thư mục, kết nối và cài đặt.">
-                <Btn variant="danger" onClick={() => setDel("all")}>Xoá tất cả</Btn>
-              </Row>
-              <Row icon="external" title="Chính sách quyền riêng tư" desc="Cách MindMirror dùng dữ liệu của bạn.">
-                <a href="/privacy.html" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-mirror">Xem <Icon name="external" /></a>
-              </Row>
-            </div>
-          </Card>
+          <Section id="notify" title="Thông báo" subtitle="Hiển thị ở biểu tượng chuông trên thanh công cụ.">
+            <Row title="Kiến thức cần củng cố" desc="Nhắc khi một phiên còn khái niệm chưa rõ.">
+              <Toggle label="Kiến thức cần củng cố" checked={notify.gaps} onChange={(x) => patchNotify({ gaps: x })} />
+            </Row>
+            <Row title="Phiên học chưa hoàn thành" desc="Nhắc quay lại phiên chưa kết thúc sau 1 ngày.">
+              <Toggle label="Phiên học chưa hoàn thành" checked={notify.unfinished} onChange={(x) => patchNotify({ unfinished: x })} />
+            </Row>
+            <Row title="Tóm tắt hằng tuần" desc="Số phiên học và nội dung nên ôn trong 7 ngày qua.">
+              <Toggle label="Tóm tắt hằng tuần" checked={notify.weekly} onChange={(x) => patchNotify({ weekly: x })} />
+            </Row>
+          </Section>
+
+          <Section id="data" title="Dữ liệu & quyền riêng tư">
+            <Row title="Kết nối Google Drive, Notion" desc="Lấy tài liệu thẳng vào thư mục, chỉ đọc.">
+              <Link to="/library" className="inline-flex items-center gap-1 text-sm font-medium text-mirror">Quản lý kết nối <Icon name="arrowRight" /></Link>
+            </Row>
+            <Row title="Tải dữ liệu của tôi" desc="Phiên học (kèm Thẻ Gương), danh sách tài liệu và thư mục — tệp JSON.">
+              <Btn onClick={exportData} disabled={exporting}>{exporting ? "Đang tạo tệp…" : "Tải xuống"}</Btn>
+            </Row>
+            <Row title="Lịch sử học tập" desc="Xem lại toàn bộ phiên đã học.">
+              <Link to="/history" className="inline-flex items-center gap-1 text-sm font-medium text-mirror">Mở lịch sử <Icon name="arrowRight" /></Link>
+            </Row>
+            <Row title="Xoá lịch sử học tập" desc="Xoá mọi phiên học, giữ lại tài liệu và thư mục. Sẽ hỏi lại trước khi xoá.">
+              <Btn variant="danger" onClick={() => setDel("sessions")}>Xoá lịch sử…</Btn>
+            </Row>
+            <Row title="Xoá toàn bộ dữ liệu" desc="Xoá vĩnh viễn phiên học, tài liệu, thư mục, kết nối và cài đặt. Sẽ hỏi lại trước khi xoá.">
+              <Btn variant="danger" onClick={() => setDel("all")}>Xoá dữ liệu…</Btn>
+            </Row>
+            <p className="pt-4 text-sm"><a href="/privacy.html" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-mirror">Đọc Chính sách quyền riêng tư <Icon name="external" /></a></p>
+          </Section>
+
+          <p className="text-center text-sm text-muted">Cần hỗ trợ? <Link to="/help" className="font-medium text-mirror">Xem hướng dẫn sử dụng</Link></p>
         </div>
-
-        <aside className="space-y-6">
-          <section className="panel p-5 text-center">
-            <div className="flex justify-center"><Avatar name={user.name} src={user.avatar} size={72} /></div>
-            <p className="mt-3 font-semibold text-ink">{user.name}</p>
-            {user.email && <p className="text-sm text-muted">{user.email}</p>}
-            <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-mist px-3 py-1 text-xs font-medium text-mirror"><Icon name="lock" className="h-3.5 w-3.5" /> Đăng nhập bằng Google</p>
-            <Btn className="mt-5 w-full" onClick={() => signOut()}><Icon name="logout" /> Đăng xuất</Btn>
-          </section>
-          <section className="panel bg-mist/40 p-5">
-            <p className="font-semibold text-ink">Cần hỗ trợ?</p>
-            <p className="mt-1 text-sm text-muted">Xem hướng dẫn sử dụng và câu hỏi thường gặp.</p>
-            <Link to="/help" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-mirror">Trợ giúp & phản hồi <Icon name="arrowRight" /></Link>
-          </section>
-        </aside>
       </div>
 
       <Modal open={!!del} title={del === "all" ? "Xoá toàn bộ dữ liệu" : "Xoá lịch sử học tập"} onClose={() => { setDel(null); setConfirmText(""); }}
@@ -150,12 +197,34 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
   );
 }
 
-function Row({ icon, title, desc, children, first }: { icon: IconName; title: string; desc: string; children: ReactNode; first?: boolean }) {
+function Section({ id, title, subtitle, children }: { id: string; title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <div className={`flex flex-col gap-3 py-4 sm:flex-row sm:items-center ${first ? "pt-0" : ""} first:pt-0 last:pb-0`}>
-      <span className="hidden h-9 w-9 shrink-0 place-items-center rounded-lg bg-mist text-mirror sm:grid"><Icon name={icon} /></span>
+    <section id={`set-${id}`} className="panel scroll-mt-6 p-5 sm:p-6">
+      <h2 className="font-semibold text-ink">{title}</h2>
+      {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
+      <div className="mt-3 divide-y divide-line">{children}</div>
+    </section>
+  );
+}
+
+function Row({ title, desc, children }: { title: string; desc: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 py-4 first:pt-1 last:pb-0 sm:flex-row sm:items-center">
       <div className="min-w-0 flex-1"><p className="text-sm font-medium text-ink">{title}</p><p className="text-xs text-muted">{desc}</p></div>
       <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function Segmented<T extends string>({ label, value, options, onChange, disabled }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; disabled?: boolean }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border border-line bg-paper p-0.5">
+      {options.map((o) => (
+        <button key={o.value} role="radio" aria-checked={value === o.value} disabled={disabled} onClick={() => onChange(o.value)}
+          className={`rounded-md px-3 py-1.5 text-sm disabled:opacity-50 ${value === o.value ? "bg-sheet font-semibold text-mirror shadow-sm" : "text-muted hover:text-ink"}`}>
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }
