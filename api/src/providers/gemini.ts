@@ -1,5 +1,8 @@
 import { type LLMProvider, type LLMRequest, type LLMResponse, ProviderError, parseRetryAfter } from "./types";
 
+/** Seed cố định cho các lời gọi temperature 0 (chấm điểm) — giảm dao động nhãn giữa các lần chạy. */
+export const GRADING_SEED = 20261111;
+
 export interface GeminiConfig {
   apiKey: string;
   model: string;
@@ -48,6 +51,8 @@ export class GeminiProvider implements LLMProvider {
       generationConfig: {
         ...(hasTools ? {} : { responseMimeType: "application/json" }),
         temperature: req.temperature ?? 0.4,
+        // Bước cần ổn định (chấm điểm, temperature 0): cố định seed để cùng đầu vào cho cùng nhãn nhiều nhất có thể.
+        ...(req.temperature === 0 ? { seed: GRADING_SEED } : {}),
         maxOutputTokens: req.maxOutputTokens ?? 1024,
       },
     };
