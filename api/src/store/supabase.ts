@@ -177,6 +177,7 @@ export class SupabaseStore implements Store {
       await this.db.from("user_settings").delete().eq("user_id", userId);
       await this.db.from("ai_call_usage").delete().eq("user_id", userId);
       await this.db.from("web_search_log").delete().eq("user_id", userId);
+      await this.db.from("graph_build_log").delete().eq("user_id", userId);
       await this.db.from("documents").delete().eq("user_id", userId); // cascade chunks
       await this.db.from("folders").delete().eq("user_id", userId);
       await this.db.from("connectors").delete().eq("user_id", userId);
@@ -227,6 +228,28 @@ export class SupabaseStore implements Store {
     if (error) throw error;
     return (data ?? []).length > 0;
   }
+  async listChunks(userId: string, documentId: string): Promise<Chunk[]> {
+    const { data, error } = await this.db
+      .from("chunks")
+      .select("id,document_id,ordinal,page,heading,text,search_text,suspicious")
+      .eq("user_id", userId).eq("document_id", documentId)
+      .order("ordinal", { ascending: true }).limit(2000);
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({
+      id: r.id, documentId: r.document_id, userId, ordinal: r.ordinal, page: r.page, heading: r.heading, text: r.text,
+      searchText: r.search_text, embedding: null, suspicious: r.suspicious,
+    }));
+  }
+  async countGraphBuildsSince(userId: string, sinceIso: string) {
+    const { count, error } = await this.db.from("graph_build_log").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", sinceIso);
+    if (error) throw error;
+    return count ?? 0;
+  }
+  async logGraphBuild(userId: string, atIso: string, pages: number) {
+    const { error } = await this.db.from("graph_build_log").insert({ user_id: userId, created_at: atIso, pages });
+    if (error) throw error;
+  }
+
   async getChunks(userId: string, ids: string[]): Promise<RetrievedChunk[]> {
     if (!ids.length) return [];
     const { data, error } = await this.db

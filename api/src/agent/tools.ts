@@ -19,6 +19,8 @@ import { NoopTrace, type SpanHandle, type Trace } from "../obs/tracer";
 import { assessLearner } from "./assessment";
 import { safeUrlForTrace, WebSearchError, type WebPassage, type WebSearcher } from "../web/search";
 import { DEFAULT_SUBJECT } from "../web/allowlist";
+import type { GraphStore } from "../graph/types";
+import { graphContext } from "../graph/retrieve";
 
 export type ToolInitiator = "model" | "policy" | "mcp";
 
@@ -34,6 +36,8 @@ export interface ToolContext {
   sourceOffset?: number;
   /** Tìm nguồn web chính thống (Đợt 2) — null/undefined = tắt. */
   web?: WebSearcher | null;
+  /** Đồ thị khái niệm (Đợt 3, Neo4j) — null/undefined = tắt. */
+  graph?: GraphStore | null;
 }
 
 export type ToolErrorCode = "invalid_input" | "forbidden" | "not_found" | "unavailable" | "internal";
@@ -308,6 +312,78 @@ const searchTrustedSources: ToolDef<any, typeof WebOutput> = {
   },
 };
 
+// ---------------- 7. explore_concept_graph (Đợt 3 — GraphRAG, chỉ-đọc; workflow Khám phá gọi + MCP) ----------------
+const GraphRel = z.object({
+  source_id: z.string(), concept: z.string(), relation: z.enum(["CAN_BIET_TRUOC", "LIEN_QUAN"]), target: z.string(),
+  document_title: z.string(), page: z.number().nullable(), quote: z.string(),
+});
+const GraphOutput = z.object({
+  seeds: z.array(z.string()), prerequisites: z.array(GraphRel), related: z.array(GraphRel),
+  searched_documents: z.number(), note: z.string().nullable(),
+});
+const exploreConceptGraph: ToolDef<any, typeof GraphOutput> = {
+  name: "explore_concept_graph",
+  description:
+    "Xem ĐỒ THỊ KHÁI NIỆM dựng từ tài liệu của chính người học: khái niệm nền cần biết trước, khái niệm liên quan, " +
+    "kèm đoạn tài liệu và số trang làm căn cứ. Dùng khi người học vướng một khái niệm để tìm điểm cần ôn trước.",
+  input: z.object({
+    concept: z.string().trim().min(1).max(120),
+    query: z.string().trim().max(300).optional().nullable(),
+    document_ids: z.array(uuid).max(10).optional().nullable(),
+  }),
+  output: GraphOutput,
+  readOnly: true,
+  modelCallable: false, // workflow gọi khi người học vướng 2 lượt; client MCP gọi trực tiếp
+  parameters: {
+    type: "object",
+    properties: {
+      concept: { type: "string", description: "Khái niệm đang vướng / cần xem quan hệ" },
+      query: { type: "string", description: "(tuỳ chọn) câu hỏi để tìm đoạn tài liệu liên quan" },
+      document_ids: { type: "array", items: { type: "string" }, description: "(tuỳ chọn) chỉ trong các tài liệu này" },
+    },
+    required: ["concept"],
+  },
+  async run(ctx, input) {
+    if (!ctx.graph) throw new ToolError("unavailable", "graph_not_configured");
+    let docIds: string[];
+    if (ctx.session) {
+      if (ctx.session.userId !== ctx.userId) throw new ToolError("forbidden", "session_not_accessible");
+      docIds = ctx.session.documentIds;
+    } else {
+      const all = await ctx.store.listDocuments(ctx.userId);
+      const owned = new Set(all.map((d) => d.id));
+      if (input.document_ids?.some((id: string) => !owned.has(id))) throw new ToolError("forbidden", "document_not_accessible");
+      docIds = input.document_ids?.length ? input.document_ids : all.map((d) => d.id);
+    }
+    if (!docIds.length) return { data: { seeds: [], prerequisites: [], related: [], searched_documents: 0, note: "no_documents" } };
+    const g = await graphContext({ userId: ctx.userId, documentIds: docIds, query: input.query || input.concept, concept: input.concept, graph: ctx.graph, retriever: ctx.retriever });
+    // Đoạn căn cứ (bỏ trùng) → nhãn S(offset+i) để model trích dẫn như đoạn tài liệu thường.
+    const chunks: RetrievedChunk[] = [];
+    const sid = (r: { chunk: RetrievedChunk }) => {
+      let i = chunks.findIndex((c) => c.chunk.id === r.chunk.chunk.id);
+      if (i < 0) { chunks.push(r.chunk); i = chunks.length - 1; }
+      return `S${(ctx.sourceOffset ?? 0) + i + 1}`;
+    };
+    const rel = (r: (typeof g.prerequisites)[number]) => ({
+      source_id: sid(r), concept: r.fromName, relation: r.type, target: r.toName,
+      document_title: r.evidence.documentTitle, page: r.evidence.page, quote: r.evidence.quote,
+    });
+    const prerequisites = g.prerequisites.slice(0, 4).map(rel);
+    const related = g.related.slice(0, 4).map(rel);
+    ctx.trace?.start("graph.retrieve", "retriever", ctx.parent ?? null, {
+      purpose: "graph", method: ctx.graph.kind, seeds: g.seeds.length, rag_pages: g.ragPages,
+      results: [...prerequisites, ...related].map((r) => r.page), dropped_stale: g.droppedStale,
+    }).end();
+    return {
+      data: {
+        seeds: g.seeds.map((s) => s.name), prerequisites, related, searched_documents: docIds.length,
+        note: g.seeds.length === 0 ? "concept_not_in_graph" : prerequisites.length + related.length === 0 ? "no_grounded_relations" : null,
+      },
+      chunks,
+    };
+  },
+};
+
 export const TOOLS = {
   search_learning_materials: searchLearningMaterials,
   retrieve_document_context: retrieveDocumentContext,
@@ -315,6 +391,7 @@ export const TOOLS = {
   get_knowledge_gaps: getKnowledgeGaps,
   save_session_summary: saveSessionSummary,
   search_trusted_sources: searchTrustedSources,
+  explore_concept_graph: exploreConceptGraph,
 } as const;
 
 export type ToolName = keyof typeof TOOLS;
@@ -382,7 +459,7 @@ function argKeys(a: unknown): string[] {
 }
 function countOf(d: unknown): number | null {
   if (!d || typeof d !== "object") return null;
-  for (const k of ["results", "sessions", "gaps"]) if (Array.isArray((d as any)[k])) return (d as any)[k].length;
+  for (const k of ["results", "sessions", "gaps", "prerequisites"]) if (Array.isArray((d as any)[k])) return (d as any)[k].length;
   return null;
 }
 function fold(s: string): string {

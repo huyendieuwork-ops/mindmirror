@@ -88,6 +88,15 @@ export class MemoryStore implements Store {
     this.chunks.delete(id);
     return true;
   }
+  graphBuilds: { userId: string; at: string; pages: number }[] = [];
+  async listChunks(userId: string, documentId: string) {
+    return (this.chunks.get(documentId) ?? []).filter((c) => c.userId === userId).sort((a, b) => a.ordinal - b.ordinal);
+  }
+  async countGraphBuildsSince(userId: string, sinceIso: string) {
+    return this.graphBuilds.filter((x) => x.userId === userId && x.at >= sinceIso).length;
+  }
+  async logGraphBuild(userId: string, atIso: string, pages: number) { this.graphBuilds.push({ userId, at: atIso, pages }); }
+
   async getChunks(userId: string, ids: string[]): Promise<RetrievedChunk[]> {
     const want = new Set(ids);
     const out: RetrievedChunk[] = [];

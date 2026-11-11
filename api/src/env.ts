@@ -9,6 +9,8 @@ import type { ContentMode, TraceExporter } from "./obs/tracer";
 import { loadPrices } from "./obs/pricing";
 import { TavilyProvider, WebSearcher, WikipediaProvider } from "./web/search";
 import type { Store } from "./store/types";
+import { Neo4jGraphStore } from "./graph/neo4j";
+import type { GraphStore } from "./graph/types";
 
 export interface Env {
   APP_ENV?: string;
@@ -49,6 +51,14 @@ export interface Env {
   WEB_SEARCH?: string;               // "off" để tắt hẳn
   LIMIT_WEB_SEARCHES_PER_DAY?: string; // mặc định 20
   WEB_CACHE_DAYS?: string;           // mặc định 7
+  // Đồ thị khái niệm (Đợt 3) — Neo4j Aura qua Query API HTTP
+  NEO4J_URI?: string;
+  NEO4J_USERNAME?: string;
+  NEO4J_PASSWORD?: string;
+  NEO4J_DATABASE?: string;            // mặc định "neo4j"
+  GRAPH_MAX_PAGES_PER_BUILD?: string; // mặc định 6 trang mỗi lần bấm
+  GRAPH_MAX_CALLS_PER_BUILD?: string; // mặc định 3 lần gọi Gemini mỗi lần bấm
+  GRAPH_BUILDS_PER_DAY?: string;      // mặc định 10 lần bấm mỗi người mỗi ngày
   // MCP
   CONNECTOR_ENC_KEY?: string;
   MCP_ALLOWED_HOSTS?: string;
@@ -84,6 +94,12 @@ export function buildWebSearcher(env: Env, store: Store | null): WebSearcher | n
   if ((env.WEB_SEARCH ?? "").toLowerCase() === "off") return null;
   const provider = env.TAVILY_API_KEY?.trim() ? new TavilyProvider(env.TAVILY_API_KEY.replace(/[^\x21-\x7E]/g, "")) : new WikipediaProvider();
   return new WebSearcher({ provider, store, dailyLimit: num(env.LIMIT_WEB_SEARCHES_PER_DAY, 20), cacheDays: num(env.WEB_CACHE_DAYS, 7) });
+}
+
+/** Neo4j nếu đủ 3 secret; thiếu → null (tính năng bản đồ khái niệm tắt, báo rõ ở /api/graph/status). */
+export function buildGraphStore(env: Env): GraphStore | null {
+  if (!env.NEO4J_URI?.trim() || !env.NEO4J_USERNAME?.trim() || !env.NEO4J_PASSWORD?.trim()) return null;
+  return new Neo4jGraphStore({ uri: env.NEO4J_URI, username: env.NEO4J_USERNAME, password: env.NEO4J_PASSWORD, database: env.NEO4J_DATABASE });
 }
 
 export function buildExporters(env: Env): TraceExporter[] {

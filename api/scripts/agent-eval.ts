@@ -28,6 +28,12 @@ import { percentile } from "./lib/metrics";
 import { checkUrl } from "../src/web/allowlist";
 import { fetchAllowedPage } from "../src/web/fetch";
 import { WebSearcher, WikipediaProvider, TavilyProvider, type SearchProvider } from "../src/web/search";
+import { MemoryGraphStore } from "../src/graph/memory";
+import { buildConceptGraph, GraphBuildError } from "../src/graph/build";
+import { graphContext } from "../src/graph/retrieve";
+import { handleMcp } from "../src/mcp/server";
+import { containsQuote } from "../src/rag/text";
+import { fixtureExtractor } from "../eval/graph-fixture";
 
 const args = process.argv.slice(2);
 const flag = (n: string) => args.includes(`--${n}`);
@@ -311,6 +317,123 @@ async function evalWebScenario(c: any): Promise<[boolean, string, { tokens: numb
   return [false, "kịch bản không xác định", { tokens, calls }];
 }
 
+// ---------------- Đợt 3: GraphRAG (offline: LangChain + model mô phỏng bằng đồ thị gán tay) ----------------
+async function graphLib(userId = OWNER, build = true) {
+  const lib = await library(userId);
+  const graph = new MemoryGraphStore();
+  const { p, router } = scriptedRouter(Array.from({ length: 20 }, () => fixtureExtractor({ includeFabricated: true })));
+  const runs = [];
+  if (build) for (let i = 0; i < 4; i++) {
+    const r = await buildConceptGraph({ userId, documentIds: [lib.document.id], store: lib.store, graph, router });
+    runs.push(r);
+    if (r.done) break;
+  }
+  return { ...lib, graph, p, router, runs };
+}
+
+async function evalGraphScenario(c: any): Promise<[boolean, string, { tokens: number; calls: number }]> {
+  const z = { tokens: 0, calls: 0 };
+  switch (c.scenario) {
+    case "build_page_limit": {
+      const g = await graphLib(OWNER, false);
+      const r1 = await buildConceptGraph({ userId: OWNER, documentIds: [g.document.id], store: g.store, graph: g.graph, router: g.router, maxPages: 4 });
+      const r2 = await buildConceptGraph({ userId: OWNER, documentIds: [g.document.id], store: g.store, graph: g.graph, router: g.router, maxPages: 6 });
+      const r3 = await buildConceptGraph({ userId: OWNER, documentIds: [g.document.id], store: g.store, graph: g.graph, router: g.router, maxPages: 6 });
+      const ok = r1.processedPages === 4 && r1.llmCalls <= 3 && r2.done && r1.processedPages + r2.processedPages === r1.totalPages && r3.llmCalls === 0;
+      return [ok, `lần 1: ${r1.processedPages} trang/${r1.llmCalls} lời gọi, lần 2: ${r2.processedPages} trang, lần 3: ${r3.llmCalls} lời gọi`, { tokens: 0, calls: g.p.calls.length }];
+    }
+    case "build_drop_fabricated": {
+      const g = await graphLib();
+      const dropped = g.runs.reduce((a, r) => a + r.dropped.relations, 0);
+      const fake = g.graph.relations.some((r) => r.from === "chỉ mục b tree" && r.to.includes("boyce"));
+      const grounded = g.graph.relations.every((r) => r.evidence.page !== null && r.evidence.quote.length > 0);
+      return [dropped >= 1 && !fake && grounded && g.graph.relations.length >= 10, `quan hệ=${g.graph.relations.length}, loại bịa=${dropped}, còn quan hệ bịa=${fake}`, { tokens: 0, calls: g.p.calls.length }];
+    }
+    case "build_other_user": {
+      const g = await graphLib(OWNER, false);
+      let code = "none";
+      try { await buildConceptGraph({ userId: OTHER, documentIds: [g.document.id], store: g.store, graph: g.graph, router: g.router }); } catch (e) { code = (e as GraphBuildError).code; }
+      return [code === "forbidden" && g.p.calls.length === 0, `lỗi=${code}, lời gọi model=${g.p.calls.length}`, z];
+    }
+    case "build_daily_limit": {
+      const g = await graphLib(OWNER, false);
+      await g.store.logGraphBuild(OWNER, new Date().toISOString(), 6);
+      let code = "none";
+      try { await buildConceptGraph({ userId: OWNER, documentIds: [g.document.id], store: g.store, graph: g.graph, router: g.router, buildsPerDay: 1 }); } catch (e) { code = (e as GraphBuildError).code; }
+      return [code === "daily_limit" && g.p.calls.length === 0, `lỗi=${code}, lời gọi model=${g.p.calls.length}`, z];
+    }
+    case "retrieve_named": {
+      const g = await graphLib();
+      const r = await graphContext({ userId: OWNER, documentIds: [g.document.id], query: "3NF", concept: "3NF", graph: g.graph, retriever: g.retriever });
+      const names = r.prerequisites.map((x) => x.fromName);
+      const ok = names.includes("Dạng chuẩn 2 (2NF)") && names.includes("Phụ thuộc bắc cầu") && r.prerequisites.every((x) => x.evidence.page === 45);
+      return [ok, `nền=[${names}] trang=[${r.prerequisites.map((x) => x.evidence.page)}]`, z];
+    }
+    case "retrieve_via_rag": {
+      const g = await graphLib();
+      const r = await graphContext({ userId: OWNER, documentIds: [g.document.id], query: "TenKhoa phụ thuộc MaKhoa còn MaKhoa phụ thuộc MaLop", graph: g.graph, retriever: g.retriever });
+      const ok = r.seeds.some((s) => s.name === "Dạng chuẩn 3 (3NF)") && r.prerequisites.length > 0;
+      return [ok, `hạt giống=[${r.seeds.map((s) => s.name)}] nền=${r.prerequisites.length}`, z];
+    }
+    case "retrieve_isolation": {
+      const g = await graphLib();
+      const direct = await graphContext({ userId: OTHER, documentIds: [], query: "3NF", concept: "3NF", graph: g.graph, retriever: g.retriever });
+      const trace = new Trace("eval.mcp");
+      const mcp = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "explore_concept_graph", arguments: { concept: "3NF", document_ids: [g.document.id] } } },
+        { userId: OTHER, store: g.store, retriever: g.retriever, session: null, trace, graph: g.graph });
+      const res = (mcp.body as any).result;
+      const ok = direct.seeds.length === 0 && res?.isError === true && JSON.stringify(res).includes("forbidden");
+      return [ok, `đọc trực tiếp: ${direct.seeds.length} khái niệm; MCP: ${res?.isError ? "bị từ chối" : "LỌT"}`, z];
+    }
+    case "retrieve_stale": {
+      const g = await graphLib();
+      g.graph.relations.forEach((r) => { if (r.to === "dạng chuẩn 3") r.evidence.quote = "câu này không có trong tài liệu"; });
+      const r = await graphContext({ userId: OWNER, documentIds: [g.document.id], query: "3NF", concept: "3NF", graph: g.graph, retriever: g.retriever });
+      return [r.prerequisites.length === 0 && r.droppedStale >= 2, `nền còn lại=${r.prerequisites.length}, loại vì căn cứ không khớp=${r.droppedStale}`, z];
+    }
+    case "explore_stuck": {
+      const g = await graphLib();
+      const stuck = turn({ next_action: "acknowledge", assistant_text: "Bạn thử nghĩ lại xem?", suspected_gaps: ["Dạng chuẩn 3 (3NF)"] });
+      const { p, router } = scriptedRouter([stuck, stuck, (req: any) => {
+        const m = /—CẦN BIẾT TRƯỚC→ “Dạng chuẩn 3 \(3NF\)” \(căn cứ: đoạn (S\d+)/.exec(req.user);
+        return turn({ next_action: "explain_foundation", assistant_text: `Trước hết hãy nắm phụ thuộc bắc cầu [${m?.[1]}]. Bạn thử nói lại nó là gì?`, source_citations: [{ source: m?.[1], quote: "phụ thuộc bắc cầu vào khóa chính" }] });
+      }]);
+      let s = createSession({ userId: OWNER, mode: "explore", topic: "Chuẩn hoá", documentIds: [g.document.id] }, { id: seqId });
+      const deps: EngineDeps = { core: router, id: seqId, retriever: g.retriever, tools: { store: g.store }, graph: g.graph };
+      for (const t of ["3NF là gì nhỉ?", "vẫn chưa hiểu 3NF"]) s = (await runTurn(s, { text: t }, deps)).session;
+      const r = await runTurn(s, { text: "3NF khó quá" }, deps);
+      const called = !!r.result.toolsUsed?.some((t) => t.name === "explore_concept_graph" && t.ok);
+      const ok = called && (p.calls[2]?.user ?? "").includes("<concept_graph") && r.result.citations.length === 1;
+      return [ok, `gọi đồ thị=${called}, khối đồ thị trong prompt=${(p.calls[2]?.user ?? "").includes("<concept_graph")}, trích dẫn=${r.result.citations.map((x) => `tr.${x.page}`)}`, { tokens: 0, calls: p.calls.length }];
+    }
+    case "empty_graph_fallback": {
+      const g = await graphLib(OWNER, false);
+      const stuck = turn({ next_action: "acknowledge", assistant_text: "Bạn thử nghĩ lại xem?", suspected_gaps: ["3NF"] });
+      const { p, router } = scriptedRouter([stuck, stuck, stuck]);
+      let s = createSession({ userId: OWNER, mode: "explore", topic: "Chuẩn hoá", documentIds: [g.document.id] }, { id: seqId });
+      const deps: EngineDeps = { core: router, id: seqId, retriever: g.retriever, tools: { store: g.store }, graph: g.graph };
+      let last: any;
+      for (const t of ["3NF?", "chưa hiểu 3NF", "vẫn chưa"]) { last = await runTurn(s, { text: t }, deps); s = last.session; }
+      const u = p.calls[2]?.user ?? "";
+      const ok = !u.includes("<concept_graph") && u.includes("<sources") && !!last.result.toolsUsed?.some((t: any) => t.name === "explore_concept_graph");
+      return [ok, `khối đồ thị=${u.includes("<concept_graph")}, có đoạn RAG=${u.includes("<sources")}`, { tokens: 0, calls: p.calls.length }];
+    }
+    case "mcp_readonly": {
+      const g = await graphLib();
+      const trace = new Trace("eval.mcp");
+      const list = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { userId: OWNER, store: g.store, retriever: g.retriever, session: null, trace, graph: g.graph });
+      const tool = (list.body as any).result.tools.find((t: any) => t.name === "explore_concept_graph");
+      const call = await handleMcp({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "explore_concept_graph", arguments: { concept: "2NF" } } },
+        { userId: OWNER, store: g.store, retriever: g.retriever, session: null, trace, graph: g.graph });
+      const data = (call.body as any).result?.structuredContent;
+      const quoteOk = (data?.prerequisites ?? []).every((x: any) => g.store.chunks.get(g.document.id)!.some((ch) => containsQuote(ch.text, x.quote)));
+      const ok = !!tool && tool.annotations.readOnlyHint === true && data?.prerequisites?.length > 0 && quoteOk;
+      return [ok, `liệt kê=${!!tool}, chỉ-đọc=${tool?.annotations?.readOnlyHint}, nền của 2NF=${data?.prerequisites?.map((x: any) => x.concept)}`, z];
+    }
+  }
+  return [false, "kịch bản không xác định", z];
+}
+
 // ---------------- live evaluators (model thật, có ngân sách) ----------------
 let liveCalls = 0;
 let lastCallAt = 0;
@@ -389,6 +512,7 @@ for (const c of cases) {
     else if (c.type === "scenario") [pass, detail, extra] = await evalScenario(c);
     else if (c.type === "web_link") [pass, detail] = evalWebLink(c);
     else if (c.type === "web_scenario") [pass, detail, extra] = await evalWebScenario(c);
+    else if (c.type === "graph_scenario") [pass, detail, extra] = await evalGraphScenario(c);
   } catch (e) {
     pass = false; detail = `lỗi: ${(e as Error).message.slice(0, 160)}`;
   }

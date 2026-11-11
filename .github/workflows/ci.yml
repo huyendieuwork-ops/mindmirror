@@ -6,6 +6,7 @@ jobs:
     defaults: { run: { working-directory: api } }
     env:
       HAS_GEMINI: ${{ (secrets.GEMINI_API_KEY_CI || secrets.GEMINI_API_KEY) != '' }}   # secrets không dùng trực tiếp trong if
+      HAS_NEO4J: ${{ secrets.NEO4J_URI != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,6 +18,14 @@ jobs:
       - run: npm run eval -- --suite retrieval --ci
       # Agent evals offline (guardrail, tool/permission, RAG/citation, workflow) — deterministic, 0 API call
       - run: npm run eval:agent -- --ci
+      # Đợt 3: kiểm Neo4j Aura thật bằng đúng code của Worker (ghi đồ thị tạm dưới userId ci-smoke-…, đọc lại, xoá sạch)
+      - if: env.HAS_NEO4J == 'true'
+        run: npx tsx scripts/neo4j-check.ts
+        env:
+          NEO4J_URI: ${{ secrets.NEO4J_URI }}
+          NEO4J_USERNAME: ${{ secrets.NEO4J_USERNAME }}
+          NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+          NEO4J_DATABASE: ${{ secrets.NEO4J_DATABASE }}
       # Agent evals với model thật: giới hạn 24 lời gọi, giãn cách 4.2s (free tier 15 RPM); chỉ báo cáo, không chặn merge
       - if: env.HAS_GEMINI == 'true'
         run: npm run eval:agent -- --live --max-calls 24

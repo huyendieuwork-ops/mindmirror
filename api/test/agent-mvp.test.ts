@@ -340,7 +340,7 @@ describe("MCP server (/mcp) — MCP tool được gọi thật qua JSON-RPC", ()
     const info = await client.initialize();
     expect(info.serverName).toBe("mindmirror");
     const tools = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["get_knowledge_gaps", "get_learning_history", "search_learning_materials"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["explore_concept_graph", "get_knowledge_gaps", "get_learning_history", "search_learning_materials"]);
     expect(tools.every((t) => t.annotations?.readOnlyHint)).toBe(true);
     const res = await client.callTool("search_learning_materials", { query: "dạng chuẩn 2 phụ thuộc đầy đủ" });
     expect(res.isError).toBe(false);
