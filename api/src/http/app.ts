@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { z } from "zod";
 import { AgentUnavailableError, createSession, prepareGroundedSession, runTurn } from "../agent/engine";
 import { assessLearner } from "../agent/assessment";
+import { checkUserInput } from "../agent/input-guard";
 import { DEFAULT_SETTINGS, type Session } from "../agent/types";
 import { buildEmbedder, buildExporters, buildGraphStore, buildRouters, buildWebSearcher, contentMode, num, type Env } from "../env";
 import type { GraphStore } from "../graph/types";
@@ -52,6 +53,7 @@ const CreateSessionBody = z.object({
   self_confidence: z.enum(["unsure", "somewhat", "confident"]).optional().nullable(),
   source_text: z.string().max(20_000).optional().nullable(),
   document_ids: z.array(z.string().uuid()).max(5).optional(),
+  folder_id: z.string().uuid().optional().nullable(),
 });
 
 const DocumentBody = z.object({
@@ -191,6 +193,19 @@ export function createApp(over: AppOverrides = {}) {
     const owned = await store.getDocuments(userId, docIds);
     if (owned.length !== docIds.length) return c.json({ error: "document_not_found" }, 404);
 
+    // Mục tiêu học của thư mục: folder_id chỉ định rõ, hoặc mọi tài liệu của phiên cùng nằm trong một thư mục.
+    const folders = (await store.listFolders?.(userId)) ?? [];
+    let folderGoal: string | null = null;
+    if (body.data.folder_id) {
+      const f = folders.find((x) => x.id === body.data.folder_id);
+      if (!f) return c.json({ error: "folder_not_found" }, 404);
+      folderGoal = f.goal ?? null;
+    } else if (owned.length) {
+      const ids = new Set(owned.map((d) => d.folderId ?? null));
+      const only = ids.size === 1 ? [...ids][0] : null;
+      folderGoal = (only && folders.find((x) => x.id === only)?.goal) || null;
+    }
+
     const settings = (await store.getSettings(userId)) ?? DEFAULT_SETTINGS;
     const trace = newTrace(env, "session.create", userId, null, ["create"]);
     const embedder = embedderFor(env);
@@ -203,7 +218,7 @@ export function createApp(over: AppOverrides = {}) {
         if (!docIds.includes(document.id)) docIds.push(document.id);
       }
       let session = createSession({
-        userId, mode: body.data.mode, topic: body.data.topic, goal: body.data.goal ?? null,
+        userId, mode: body.data.mode, topic: body.data.topic, goal: body.data.goal ?? null, folderGoal,
         selfConfidence: settings.selfAssessment ? body.data.self_confidence ?? null : null,
         documentIds: docIds, settings,
       });
@@ -336,8 +351,18 @@ export function createApp(over: AppOverrides = {}) {
 
   // ---------- Thư mục tài liệu (My Folder) ----------
   const FOLDER_COLORS = ["blue", "purple", "green", "amber", "pink", "teal"] as const;
-  const FolderBody = z.object({ name: z.string().trim().min(1).max(80), color: z.enum(FOLDER_COLORS).optional() });
-  const publicFolder = (f: { id: string; name: string; color: string; createdAt: string }) => ({ id: f.id, name: f.name, color: f.color, createdAt: f.createdAt });
+  const FolderBody = z.object({
+    name: z.string().trim().min(1).max(80),
+    color: z.enum(FOLDER_COLORS).optional(),
+    goal: z.string().trim().max(500).optional().nullable(), // "" hoặc null = xoá mục tiêu
+  });
+  const publicFolder = (f: { id: string; name: string; color: string; goal?: string | null; createdAt: string }) => ({ id: f.id, name: f.name, color: f.color, goal: f.goal ?? null, createdAt: f.createdAt });
+  /** Mục tiêu học đi vào prompt → chặn chỉ thị cài cắm / đòi bí mật ngay khi lưu (cùng lớp guardrail với tin nhắn). */
+  const goalProblem = (goal: string | null | undefined) => {
+    if (!goal) return null;
+    const v = checkUserInput(goal, { maxChars: 500, hasIntent: false });
+    return v.kind !== "ok" || v.flags.some((f) => f === "prompt_injection" || f === "grading_manipulation") ? "goal_rejected" : null;
+  };
 
   app.get("/api/folders", async (c) => {
     const items = (await c.var.store.listFolders?.(c.var.userId)) ?? [];
@@ -350,7 +375,8 @@ export function createApp(over: AppOverrides = {}) {
     const { store, userId } = c.var;
     if (!store.saveFolder || !store.listFolders) return c.json({ error: "not_supported" }, 501);
     if ((await store.listFolders(userId)).length >= 50) return c.json({ error: "folder_limit" }, 400);
-    const f = { id: crypto.randomUUID(), userId, name: b.data.name, color: b.data.color ?? "blue", createdAt: new Date().toISOString() };
+    if (goalProblem(b.data.goal)) return c.json({ error: "goal_rejected" }, 422);
+    const f = { id: crypto.randomUUID(), userId, name: b.data.name, color: b.data.color ?? "blue", goal: b.data.goal || null, createdAt: new Date().toISOString() };
     await store.saveFolder(f);
     return c.json(publicFolder(f), 201);
   });
@@ -362,7 +388,8 @@ export function createApp(over: AppOverrides = {}) {
     if (!store.saveFolder || !store.listFolders) return c.json({ error: "not_supported" }, 501);
     const f = (await store.listFolders(userId)).find((x) => x.id === c.req.param("id"));
     if (!f) return c.json({ error: "not_found" }, 404);
-    const next = { ...f, name: b.data.name ?? f.name, color: b.data.color ?? f.color };
+    if (goalProblem(b.data.goal)) return c.json({ error: "goal_rejected" }, 422);
+    const next = { ...f, name: b.data.name ?? f.name, color: b.data.color ?? f.color, goal: b.data.goal === undefined ? f.goal ?? null : b.data.goal || null };
     await store.saveFolder(next);
     return c.json(publicFolder(next));
   });
@@ -615,6 +642,7 @@ function publicSession(s: Session) {
     phase: s.state.phase,
     topic: s.state.topic,
     goal: s.state.goal,
+    folderGoal: s.state.folderGoal ?? null,
     hintLevel: s.state.hintLevel,
     turnCount: s.state.turnCount,
     messages: s.messages.map((m) => ({ id: m.id, role: m.role, text: m.text, action: m.action, citations: m.citations ?? [], webCitations: m.webCitations ?? [] })),

@@ -60,6 +60,7 @@ export interface NewSessionInput {
   mode: SessionMode;
   topic: string;
   goal?: string | null;
+  folderGoal?: string | null;
   selfConfidence?: LearningState["selfConfidence"];
   documentIds?: string[];
   settings?: UserSettings;
@@ -85,6 +86,7 @@ export function createSession(input: NewSessionInput, deps: Pick<EngineDeps, "no
       phase: "entry",
       topic,
       goal: input.goal?.trim() || null,
+      folderGoal: input.folderGoal?.trim().slice(0, 500) || null,
       currentGapId: null,
       hintLevel: 0,
       roundOnSameGap: 0,

@@ -4,7 +4,7 @@ import { Card, Icon, PageHeader, type IconName } from "../components/ui";
 const GUIDES: { icon: IconName; tone: string; title: string; text: string; to: string }[] = [
   { icon: "check", tone: "bg-mist text-mirror", title: "Kiểm tra kiến thức", text: "Nêu chủ đề đã học, giải thích theo cách của bạn. MindMirror hỏi lại, chỉ ra chỗ còn thiếu và tổng kết bằng Thẻ Gương Hiểu Biết.", to: "/check" },
   { icon: "compass", tone: "bg-[#F1ECFF] text-[#8B6FE0]", title: "Khám phá kiến thức", text: "Đặt câu hỏi về điều bạn tò mò. MindMirror dẫn dắt từng bước bằng câu hỏi gợi mở thay vì đưa đáp án ngay.", to: "/explore" },
-  { icon: "folder", tone: "bg-[#E6F6F0] text-[#2E9F7E]", title: "My Folder", text: "Tạo thư mục theo môn học, tải PDF/PPTX/TXT lên. Khi bắt đầu phiên, chọn thư mục để MindMirror đối chiếu và trích dẫn đúng trang.", to: "/folders" },
+  { icon: "folder", tone: "bg-[#E6F6F0] text-[#2E9F7E]", title: "Thư mục", text: "Tạo thư mục theo môn học, tải PDF/PPTX/TXT lên. Khi bắt đầu phiên, chọn thư mục để MindMirror đối chiếu và trích dẫn đúng trang.", to: "/folders" },
   { icon: "chart", tone: "bg-[#FFF5E0] text-[#D8961E]", title: "Báo cáo của tôi", text: "Xem mức độ hiểu ước tính, xu hướng theo tuần, khái niệm cần ôn và đề xuất ôn tập từ các phiên đã học.", to: "/reports" },
 ];
 

@@ -42,6 +42,8 @@ export interface FolderRecord {
   userId: string;
   name: string;
   color: string;
+  /** Mục tiêu học do người học đặt (≤ 500 ký tự), null = chưa đặt. Đưa vào prompt như DỮ LIỆU, không phải chỉ thị. */
+  goal?: string | null;
   createdAt: string;
 }
 

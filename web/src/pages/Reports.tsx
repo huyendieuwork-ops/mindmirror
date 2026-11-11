@@ -25,7 +25,7 @@ export default function Reports() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <PageHeader title="Báo cáo của tôi" subtitle="Theo dõi tiến độ, nhìn ra điểm mạnh và những nội dung nên ôn lại — tính từ chính các phiên học của bạn."
+      <PageHeader title="Tiến độ của bạn" subtitle="Theo dõi tiến độ, nhìn ra điểm mạnh và những nội dung nên ôn lại — tính từ chính các phiên học của bạn."
         actions={<SelectBox label="Khoảng thời gian" value={range} onChange={setRange} className="w-44" options={[{ value: "7", label: "7 ngày gần đây" }, { value: "30", label: "30 ngày gần đây" }, { value: "90", label: "90 ngày gần đây" }]} />} />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -47,7 +47,7 @@ export default function Reports() {
             <Card title="Xu hướng mức độ hiểu" subtitle="Trung bình theo tuần, từ các phiên đã có tiêu chí đánh giá">
               {trend.some((p) => p.value !== null) ? <LineChart points={trend} /> : <p className="py-10 text-center text-sm text-muted">Hoàn thành vài phiên Kiểm tra kiến thức để thấy xu hướng.</p>}
             </Card>
-            <Card title="Tiến độ theo thư mục" action={<Link to="/folders" className="text-sm font-medium text-mirror">My Folder</Link>}>
+            <Card title="Tiến độ theo thư mục" action={<Link to="/folders" className="text-sm font-medium text-mirror">Thư mục</Link>}>
               {byFolder.length === 0 ? (
                 <p className="text-sm text-muted">Chọn học liệu từ một thư mục khi bắt đầu phiên để theo dõi tiến độ từng môn.</p>
               ) : (

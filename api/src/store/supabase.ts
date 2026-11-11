@@ -288,10 +288,10 @@ export class SupabaseStore implements Store {
   async listFolders(userId: string): Promise<FolderRecord[]> {
     const { data, error } = await this.db.from("folders").select("*").eq("user_id", userId).order("created_at", { ascending: true });
     if (error) throw error;
-    return (data ?? []).map((r: any) => ({ id: r.id, userId: r.user_id, name: r.name, color: r.color, createdAt: r.created_at }));
+    return (data ?? []).map((r: any) => ({ id: r.id, userId: r.user_id, name: r.name, color: r.color, goal: r.goal ?? null, createdAt: r.created_at }));
   }
   async saveFolder(f: FolderRecord) {
-    const { error } = await this.db.from("folders").upsert({ id: f.id, user_id: f.userId, name: f.name, color: f.color, created_at: f.createdAt });
+    const { error } = await this.db.from("folders").upsert({ id: f.id, user_id: f.userId, name: f.name, color: f.color, goal: f.goal ?? null, created_at: f.createdAt });
     if (error) throw error;
   }
   async deleteFolder(userId: string, id: string) {
