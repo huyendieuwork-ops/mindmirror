@@ -25,11 +25,14 @@ jobs:
           npm ci --prefix api
           npm ci --prefix web
 
+      # Cổng chặn lên production (thay cho "chặn merge": repo private gói Free nên GitHub không áp dụng branch protection).
+      # Bước nào trượt thì DỪNG — không chạy migration, không deploy; web giữ bản cũ. Tất cả offline, 0 lời gọi Gemini.
       - name: Kiểm thử
         run: |
           npm run typecheck --prefix api
           npm test --prefix api
           npm run eval:retrieval --prefix api -- --ci
+          npm run eval:agent --prefix api -- --ci   # nhóm P0 (guardrail, phân quyền, trích dẫn, nguồn chính thống) 100%, còn lại ≥ 90%
 
       - name: Tạo / cập nhật bảng Supabase
         if: env.HAS_DB == 'true'
