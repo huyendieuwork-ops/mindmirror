@@ -150,6 +150,21 @@ describe("Rà soát 12/11 – bản đồ khái niệm v2", () => {
     expect((await graph.extractedPages(U, [document.id], EXTRACTOR_VERSION)).size).toBe(r.totalPages);
   });
 
+  it("lô bị cắt cụt (hết token): chỉ đánh dấu trang đã trích được, trang còn lại đọc lại ở lần sau", async () => {
+    const { store, document } = await lib();
+    const graph = new MemoryGraphStore();
+    // JSON bị cắt giữa chừng: chỉ kịp có khái niệm của trang 44 (giống production 12/11: Groq hết 4096 token).
+    const cutJson = '{"concepts":[{"name":"Dạng chuẩn 2 (2NF)","description":"x","parent":null},{"name":"Dạng chuẩn 1 (1NF)","description":"y","parent":null}],"relations":[{"from":"Dạng chuẩn 1 (1NF)","to":"Dạng chu';
+    const { router } = scripted([{ __truncated: true, text: cutJson }, ...Array.from({ length: 10 }, () => ({ concepts: [], relations: [], mentions: [] }))]);
+    const r = await buildConceptGraph({ userId: U, documentIds: [document.id], store, graph, router, maxPages: 40, maxCalls: 1, charsPerBatch: 100000 });
+    expect(r.llmCalls).toBe(1);
+    expect(r.concepts).toBeGreaterThan(0);
+    expect(r.processedPages).toBeGreaterThan(0);
+    expect(r.processedPages).toBeLessThan(r.totalPages); // trang chưa kịp trích KHÔNG bị đánh dấu đã đọc
+    expect(r.remainingPages).toBe(r.totalPages - r.processedPages);
+    expect(r.done).toBe(false);
+  });
+
   it("trang đọc bằng bộ trích xuất cũ (v1) được đọc lại", async () => {
     const graph = new MemoryGraphStore();
     await graph.write({ userId: U, documents: [{ id: "d1", title: "T" }], pages: [{ documentId: "d1", page: 1 }, { documentId: "d1", page: 2, v: EXTRACTOR_VERSION }], concepts: [], relations: [], mentions: [] });

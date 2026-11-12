@@ -466,7 +466,7 @@ export function createApp(over: AppOverrides = {}) {
       const r = await buildConceptGraph({
         userId, documentIds: b.data.document_ids, store, graph, router: core, trace,
         // v2: mỗi lần bấm đọc tới 40 trang, gộp thành ≤ 4 lô lớn (~12.000 ký tự/lô) — vẫn ≤ 4 lời gọi AI mỗi lần bấm.
-        maxPages: num(env.GRAPH_MAX_PAGES_PER_BUILD, 40), maxCalls: num(env.GRAPH_MAX_CALLS_PER_BUILD, 4), charsPerBatch: num(env.GRAPH_CHARS_PER_BATCH, 12000), buildsPerDay: num(env.GRAPH_BUILDS_PER_DAY, 10),
+        maxPages: num(env.GRAPH_MAX_PAGES_PER_BUILD, 40), maxCalls: num(env.GRAPH_MAX_CALLS_PER_BUILD, 4), charsPerBatch: num(env.GRAPH_CHARS_PER_BATCH, 6000), buildsPerDay: num(env.GRAPH_BUILDS_PER_DAY, 10),
       });
       return c.json(r);
     } catch (e) {

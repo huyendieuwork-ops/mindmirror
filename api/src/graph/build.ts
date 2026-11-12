@@ -58,11 +58,13 @@ export function conceptAliases(name: string): string[] {
 }
 
 const CHARS_PER_BATCH = 4500;
+/** Ngân sách chữ ra mỗi lô. Lô 12k ký tự + 4096 token từng bị cắt cụt (Groq gpt-oss tính cả token suy luận) → mất quan hệ và các trang cuối lô. */
+const MAX_OUTPUT_TOKENS = 8192;
 /**
  * Phiên bản bộ trích xuất. Trang đọc bằng bản cũ hơn được coi là CHƯA đọc → lần bấm sau đọc lại bằng bản mới
  * (v2: lô lớn hơn, trích đủ ý + khái niệm cha cho mind map, câu căn cứ lấy từ chữ thật khi model chép lệch).
  */
-export const EXTRACTOR_VERSION = 2;
+export const EXTRACTOR_VERSION = 3;
 
 export async function buildConceptGraph(o: BuildOptions): Promise<BuildResult> {
   const now = (o.now ?? (() => new Date()))();
@@ -112,26 +114,31 @@ export async function buildConceptGraph(o: BuildOptions): Promise<BuildResult> {
 
   // 5. LangChain: prompt → Gemini (qua router) → JSON → zod, tuần tự từng lô.
   const span = o.trace?.start("graph.build", "chain", o.parent ?? null, { documents: docs.length, batches: run.length, pages: readPages.size });
-  const model = new RouterChatModel(o.router, { span, maxOutputTokens: 4096, temperature: 0.1 });
+  const model = new RouterChatModel(o.router, { span, maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0.1 });
   const chain = extractionChain(model);
   const inputs = run.map((b) => ({ passages: passagesBlock(b.chunks) }));
   // Tuần tự từng lô, bắt lỗi riêng từng lô. (Không dùng batch({returnExceptions}) — RunnableSequence chuyển Error
   // xuống bước sau và zod với giá trị mặc định biến nó thành "kết quả rỗng hợp lệ", làm trang bị đánh dấu đã đọc.)
   const outputs: (Extraction & { ok: boolean } | Error)[] = [];
+  const cut: boolean[] = [];
   for (const input of inputs) {
+    const before = model.truncated;
     try { outputs.push(await chain.invoke(input)); } catch (e) { outputs.push(e instanceof Error ? e : new Error(String(e))); }
+    const last = outputs[outputs.length - 1];
+    cut.push(model.truncated > before || (!(last instanceof Error) && !!(last as any).partial));
   }
 
   // 6. Kiểm chứng + gộp.
   const concepts = new Map<string, ConceptNode>();
   const relations: GraphRelation[] = [];
   const mentions: GraphMention[] = [];
-  let droppedRel = 0, droppedMen = 0, droppedBatch = 0;
+  let droppedRel = 0, droppedMen = 0, droppedBatch = 0, truncatedBatches = 0;
   const okPages = new Set<string>();
   outputs.forEach((out, i) => {
     if (out instanceof Error || !(out as any).ok) { droppedBatch++; return; }
     // Chỉ lô đọc thành công mới được đánh dấu "đã đọc" — lô lỗi (429, JSON hỏng) sẽ được đọc lại ở lần bấm sau.
-    for (const c of run[i]!.chunks) okPages.add(pageKey(c.documentId, c.page));
+    // Lô bị cắt cụt (hết token): chỉ đánh dấu trang đã có khái niệm/quan hệ kiểm chứng được; trang chưa kịp trích đọc lại sau.
+    const before = { men: mentions.length, rel: relations.length };
     const ex = out as Extraction;
     const chunks = run[i]!.chunks;
     const alias = (s: string) => chunks[Number(/^S(\d+)$/i.exec(s.trim())?.[1] ?? 0) - 1];
@@ -187,6 +194,10 @@ export async function buildConceptGraph(o: BuildOptions): Promise<BuildResult> {
       const p = resolve(c.parent) ?? conceptKey(c.parent);
       if (p && p !== key) node.parent = p;
     }
+    if (!cut[i]) { for (const c of run[i]!.chunks) okPages.add(pageKey(c.documentId, c.page)); return; }
+    truncatedBatches++;
+    for (const m of mentions.slice(before.men)) okPages.add(pageKey(m.evidence.documentId, m.evidence.page));
+    for (const r of relations.slice(before.rel)) okPages.add(pageKey(r.evidence.documentId, r.evidence.page));
   });
   // Khái niệm không có chỗ xuất hiện nào kiểm chứng được và không có quan hệ → không ghi (tránh nút "bịa").
   const used = new Set([...mentions.map((m) => m.concept), ...relations.flatMap((r) => [r.from, r.to])]);
@@ -205,7 +216,7 @@ export async function buildConceptGraph(o: BuildOptions): Promise<BuildResult> {
   }
   await o.store.logGraphBuild?.(o.userId, now.toISOString(), okPages.size).catch(() => {});
   const remaining = pending.length - okPages.size;
-  span?.set({ concepts: keptConcepts.length, relations: relations.length, mentions: mentions.length, dropped_relations: droppedRel, dropped_mentions: droppedMen, dropped_batches: droppedBatch, remaining_pages: remaining }).end();
+  span?.set({ concepts: keptConcepts.length, relations: relations.length, mentions: mentions.length, dropped_relations: droppedRel, dropped_mentions: droppedMen, dropped_batches: droppedBatch, truncated_batches: truncatedBatches, remaining_pages: remaining }).end();
   return {
     processedPages: okPages.size, remainingPages: remaining, totalPages,
     concepts: keptConcepts.length, relations: relations.length, mentions: mentions.length,

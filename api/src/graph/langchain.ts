@@ -2,18 +2,20 @@
  * LangChain cho pipeline dựng đồ thị (Đợt 3).
  * RouterChatModel bọc ModelRouter của MindMirror thành ChatModel của LangChain, nên mọi lời gọi vẫn đi qua
  * cùng một chỗ: Gemini (GeoProxy) → Groq dự phòng, đếm token/chi phí, ghi trace, giới hạn tốc độ.
- * Chuỗi trích xuất: ChatPromptTemplate → RouterChatModel → JsonOutputParser → kiểm tra schema (zod) — build.ts gọi .invoke() tuần tự từng lô.
+ * Chuỗi trích xuất: ChatPromptTemplate → RouterChatModel → parseExtractionText (cứu JSON bị cắt cụt) → kiểm tra schema (zod) — build.ts gọi .invoke() tuần tự từng lô.
  */
 import { SimpleChatModel, type BaseChatModelParams } from "@langchain/core/language_models/chat_models";
 import type { BaseMessage } from "@langchain/core/messages";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { JsonOutputParser } from "@langchain/core/output_parsers";
+import { parseJsonMarkdown } from "@langchain/core/output_parsers";
 import { RunnableLambda, RunnableSequence } from "@langchain/core/runnables";
 import { z } from "zod";
 import type { ModelRouter } from "../providers/router";
 import type { SpanHandle } from "../obs/tracer";
 
 export class RouterChatModel extends SimpleChatModel {
+  /** Số lần model trả về bị cắt cụt vì hết token (build.ts dùng để không đánh dấu "đã đọc" các trang chưa kịp trích). */
+  truncated = 0;
   constructor(private router: ModelRouter, private opts: { span?: SpanHandle | null; maxOutputTokens?: number; temperature?: number; purpose?: string } = {}, params: BaseChatModelParams = {}) {
     super(params);
   }
@@ -26,6 +28,7 @@ export class RouterChatModel extends SimpleChatModel {
       { system, user, maxOutputTokens: this.opts.maxOutputTokens ?? 1800, temperature: this.opts.temperature ?? 0.1, purpose: this.opts.purpose ?? "graph_extract" },
       this.opts.span ?? undefined,
     );
+    if (res.truncated) this.truncated++;
     return res.text;
   }
 }
@@ -57,13 +60,14 @@ const SYSTEM = `Bạn trích BẢN ĐỒ KHÁI NIỆM (mind map) từ đoạn h�
 MỤC TIÊU: người học nhìn bản đồ là thấy đủ các ý chính của đoạn, xếp từ chủ đề lớn → ý con, và biết học cái gì trước.
 QUY TẮC
 1. Khái niệm (đủ ý, thường 8–20 mỗi lô): mọi thuật ngữ được ĐỊNH NGHĨA hoặc GIẢI THÍCH, mọi tiêu đề mục/chương có nội dung, các phân loại / bước / thành phần được liệt kê. Tên chuẩn ngắn gọn tiếng Việt (giữ thuật ngữ tiếng Anh nếu tài liệu dùng), kèm viết tắt trong ngoặc nếu tài liệu có, vd "Dạng chuẩn 2 (2NF)". Dùng ĐÚNG MỘT tên cho cùng một khái niệm. Không lấy từ chung chung ("ví dụ", "bảng", "hệ thống") làm khái niệm.
-   - description: 1 câu giải thích theo tài liệu (≤ 30 từ).
+   - description: 1 câu ngắn giải thích theo tài liệu (≤ 20 từ).
    - parent: tên khái niệm RỘNG HƠN chứa nó (chủ đề / mục lớn / loại cha), PHẢI có trong "concepts"; khái niệm gốc của đoạn thì null. Vd "Dạng chuẩn 2 (2NF)" có parent "Chuẩn hóa cơ sở dữ liệu"; "Use case" có parent "Mô hình hóa yêu cầu". Mỗi lô nên có 1–3 khái niệm gốc (thường là tên chương/mục) để các ý khác treo vào.
 2. Quan hệ (tối đa 20):
    - CAN_BIET_TRUOC: A → B khi đoạn cho thấy phải hiểu A thì mới hiểu/định nghĩa được B (vd "B ... khi nó đạt A", "B được định nghĩa dựa trên A").
    - LIEN_QUAN: A và B được đoạn so sánh, đối chiếu hoặc nêu cùng nhau có ý nghĩa.
    Mỗi quan hệ PHẢI có "source" (S1..) và "quote" copy NGUYÊN VĂN một câu trong đoạn đó làm căn cứ (chép y chữ, không tóm tắt). Không có câu căn cứ thì KHÔNG ghi quan hệ.
-3. mentions: mỗi khái niệm ghi ít nhất một chỗ xuất hiện {{"concept","source","quote"}} (quote = câu nguyên văn chứa khái niệm).
+3. mentions: CHỈ ghi cho khái niệm mà tên KHÔNG xuất hiện nguyên văn trong đoạn {{"concept","source","quote"}} (quote = câu nguyên văn nói về khái niệm). Tên có sẵn trong đoạn thì không cần ghi (hệ thống tự tìm).
+5. Thứ tự trả: concepts → relations → mentions. JSON gọn, không xuống dòng thừa.
 4. "from", "to", "concept", "parent" phải trùng tên trong "concepts".
 Chỉ trả JSON: {{"concepts":[{{"name":string,"description":string,"parent":string|null}}],"relations":[{{"from":string,"to":string,"type":"CAN_BIET_TRUOC"|"LIEN_QUAN","source":"S1","quote":string}}],"mentions":[{{"concept":string,"source":"S1","quote":string}}]}}`;
 
@@ -96,12 +100,24 @@ export function normalizeExtraction(raw: unknown): Extraction & { ok: boolean } 
   return r.success ? { ...r.data, ok: true } : fail;
 }
 
-/** prompt → model → JSON → zod. Lỗi parse/schema một lô → trả rỗng (lô đó bỏ qua, không làm hỏng cả lần dựng). */
+/**
+ * Văn bản model → object. JSON hợp lệ → parse thường. JSON bị CẮT CỤT (hết token) → cứu phần đã hoàn chỉnh
+ * (mục dở dang bị zod loại) và gắn `partial` để build.ts chỉ đánh dấu những trang thật sự đã trích được.
+ */
+export function parseExtractionText(text: string): Extraction & { ok: boolean; partial?: boolean } {
+  const t = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+  try { return normalizeExtraction(JSON.parse(t)); } catch {}
+  let raw: unknown = null;
+  try { raw = parseJsonMarkdown(text); } catch {}
+  const r = normalizeExtraction(raw);
+  return r.ok ? { ...r, partial: true } : r;
+}
+
+/** prompt → model → JSON → zod. Lỗi parse/schema một lô → ok:false (lô đó đọc lại sau, không làm hỏng cả lần dựng). */
 export function extractionChain(model: RouterChatModel) {
   return RunnableSequence.from([
     extractionPrompt,
     model,
-    new JsonOutputParser(),
-    RunnableLambda.from((raw: unknown): Extraction & { ok: boolean } => normalizeExtraction(raw)),
+    RunnableLambda.from((msg: any) => parseExtractionText(typeof msg === "string" ? msg : String(msg?.content ?? ""))),
   ]);
 }
