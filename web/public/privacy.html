@@ -107,6 +107,7 @@ footer{margin-top:28px;text-align:center;color:var(--muted);font-size:.88rem}
     <li>Phiên học: chủ đề/câu hỏi bạn nhập, chế độ học (Kiểm tra hiểu biết, Khám phá, Học từ đầu), trình độ bạn chọn, toàn bộ tin nhắn giữa bạn và AI.</li>
     <li>Kết quả do hệ thống tạo ra: tiêu chí đánh giá, các ý bạn đã nói được (kèm câu nguyên văn của bạn làm căn cứ), điểm còn vướng, <b>Thẻ Gương</b>, dàn ý học từ đầu và kết quả câu kiểm tra nhanh.</li>
     <li>Thư mục, tên thư mục, màu sắc và <b>mục tiêu học</b> bạn đặt cho từng thư mục.</li>
+    <li><b>Sổ ghi chú:</b> tiêu đề, nội dung và thời gian cập nhật của các ghi chú bạn tự viết. Ghi chú không được gửi tới mô hình AI.</li>
     <li>Cài đặt cá nhân: phong cách trả lời, mức thử thách, cỡ chữ và các tuỳ chọn khác.</li>
   </ul>
   <h3>2.3. Tài liệu bạn tải lên</h3>
@@ -157,7 +158,7 @@ footer{margin-top:28px;text-align:center;color:var(--muted);font-size:.88rem}
   <div class="tablewrap"><table>
     <thead><tr><th>Nhà cung cấp</th><th>Vai trò</th><th>Dữ liệu liên quan</th></tr></thead>
     <tbody>
-      <tr><td>Supabase</td><td>Cơ sở dữ liệu, xác thực đăng nhập</td><td>Tài khoản, phiên học, tài liệu (phần chữ, véc-tơ), thư mục, cài đặt, kết nối (đã mã hoá)</td></tr>
+      <tr><td>Supabase</td><td>Cơ sở dữ liệu, xác thực đăng nhập</td><td>Tài khoản, phiên học, tài liệu (phần chữ, véc-tơ), thư mục, ghi chú, cài đặt, kết nối (đã mã hoá)</td></tr>
       <tr><td>Cloudflare</td><td>Lưu trữ và chạy ứng dụng web, máy chủ trung gian gọi AI, AI Gateway</td><td>Lưu lượng truy cập; nội dung đi qua để xử lý, không lưu</td></tr>
       <tr><td>Google</td><td>Đăng nhập Google; mô hình Gemini; tạo embedding</td><td>Thông tin đăng nhập; nội dung lượt học và đoạn tài liệu cần thiết (mục 4)</td></tr>
       <tr><td>Groq</td><td>Mô hình AI dự phòng khi Gemini quá tải</td><td>Nội dung lượt học cần thiết (chỉ khi dùng dự phòng)</td></tr>
@@ -178,7 +179,7 @@ footer{margin-top:28px;text-align:center;color:var(--muted);font-size:.88rem}
 <section class="card" id="luu-tru">
   <h2>7. Thời hạn lưu trữ</h2>
   <ul>
-    <li><b>Phiên học, tài liệu, thư mục, bản đồ khái niệm, cài đặt:</b> lưu cho tới khi bạn xoá, hoặc tới khi dự án kết thúc và nhóm thông báo ngừng dịch vụ.</li>
+    <li><b>Phiên học, tài liệu, thư mục, ghi chú, bản đồ khái niệm, cài đặt:</b> lưu cho tới khi bạn xoá, hoặc tới khi dự án kết thúc và nhóm thông báo ngừng dịch vụ.</li>
     <li><b>Kết quả tìm nguồn web:</b> lưu đệm tối đa 7 ngày (chỉ trang công khai, không kèm câu hỏi gốc).</li>
     <li><b>Nhật ký kỹ thuật:</b> theo thời hạn lưu của dịch vụ giám sát; không chứa nội dung học tập theo cấu hình mặc định.</li>
     <li><b>Bộ đếm hạn mức:</b> theo ngày, chỉ dùng để giới hạn sử dụng.</li>
@@ -201,9 +202,9 @@ footer{margin-top:28px;text-align:center;color:var(--muted);font-size:.88rem}
   <h2>9. Quyền của bạn</h2>
   <ul>
     <li><b>Được biết và xem dữ liệu:</b> toàn bộ phiên học, Thẻ Gương, tài liệu, thư mục đều hiển thị trong ứng dụng.</li>
-    <li><b>Tải dữ liệu về:</b> <i>Cài đặt → Tải dữ liệu của tôi</i> (tệp JSON gồm phiên học kèm Thẻ Gương, tài liệu, thư mục, cài đặt).</li>
+    <li><b>Tải dữ liệu về:</b> <i>Cài đặt → Tải dữ liệu của tôi</i> (tệp JSON gồm phiên học kèm Thẻ Gương, tài liệu, thư mục, ghi chú, cài đặt). Từng ghi chú cũng tải được dạng PDF hoặc Word ngay trong Sổ ghi chú.</li>
     <li><b>Chỉnh sửa:</b> đổi cài đặt, tên và mục tiêu thư mục, chuyển tài liệu giữa các thư mục.</li>
-    <li><b>Xoá:</b> xoá từng tài liệu (kèm phần bản đồ dựng từ tài liệu đó), từng thư mục (tài liệu bên trong không bị xoá), toàn bộ lịch sử học tập, hoặc <b>toàn bộ dữ liệu</b> (gõ “XOA” để xác nhận) trong <i>Cài đặt</i>.</li>
+    <li><b>Xoá:</b> xoá từng ghi chú, từng tài liệu (kèm phần bản đồ dựng từ tài liệu đó), từng thư mục (tài liệu bên trong không bị xoá), toàn bộ lịch sử học tập, hoặc <b>toàn bộ dữ liệu</b> (gõ “XOA” để xác nhận) trong <i>Cài đặt</i>.</li>
     <li><b>Rút lại đồng ý:</b> ngừng sử dụng và xoá toàn bộ dữ liệu; bạn cũng có thể gỡ quyền của MindMirror trong phần <i>Bảo mật → Ứng dụng bên thứ ba</i> của tài khoản Google.</li>
     <li><b>Phản đối, hạn chế xử lý, khiếu nại:</b> liên hệ nhóm theo mục 14. Nhóm sẽ phản hồi sớm nhất có thể.</li>
   </ul>
@@ -211,7 +212,7 @@ footer{margin-top:28px;text-align:center;color:var(--muted);font-size:.88rem}
 
 <section class="card" id="trinh-duyet">
   <h2>10. Dữ liệu lưu trên trình duyệt</h2>
-  <p>MindMirror dùng bộ nhớ của trình duyệt (localStorage) để lưu phiên đăng nhập và một số tuỳ chọn giao diện như thanh bên thu gọn, cỡ chữ, đã xem hướng dẫn nhanh hay chưa. Các dữ liệu này nằm trên máy của bạn, không dùng để theo dõi. Đăng xuất hoặc xoá dữ liệu trang web trong trình duyệt sẽ xoá chúng.</p>
+  <p>MindMirror dùng bộ nhớ của trình duyệt (localStorage) để lưu phiên đăng nhập và một số tuỳ chọn giao diện như thanh bên thu gọn, cỡ chữ, đã xem hướng dẫn nhanh hay chưa, chế độ của trợ lý ghi chú (đi dạo/đứng yên/ẩn) và <b>ảnh nhân vật riêng nếu bạn tự tải lên</b> — ảnh này chỉ nằm trên trình duyệt của bạn, không gửi lên máy chủ. Các dữ liệu này nằm trên máy của bạn, không dùng để theo dõi. Đăng xuất hoặc xoá dữ liệu trang web trong trình duyệt sẽ xoá chúng.</p>
 </section>
 
 <section class="card" id="luu-y">
