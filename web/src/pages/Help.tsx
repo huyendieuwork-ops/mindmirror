@@ -77,7 +77,7 @@ const ARTICLES: Article[] = [
   A("ghi-chu", "folders", "Sổ ghi chú và trợ lý ở chân trang", [
     "Bấm vào nhân vật nhỏ ở chân trang (hoặc menu tài khoản → Sổ ghi chú) để mở sổ ghi chú. Ghi chú tự lưu khi bạn gõ và lưu trên tài khoản, đăng nhập máy khác vẫn thấy.",
     "Tải về: chọn “Ghi chú này” hoặc “Tất cả”, rồi bấm Tải PDF hoặc Tải Word (.docx).",
-    "Cài đặt → Giao diện → Trợ lý ghi chú: chọn Đi dạo, Đứng yên hoặc Ẩn; ở Hình nhân vật bạn có thể dùng ảnh riêng (PNG/GIF/WebP nền trong suốt, ≤ 600 KB) mà bạn có quyền sử dụng — ảnh chỉ lưu trên trình duyệt đó.",
+    "Cài đặt → Giao diện → Trợ lý ghi chú: chọn Đi dạo, Đứng yên hoặc Ẩn; ở Hình nhân vật bạn có thể dùng ảnh riêng (nên là PNG/GIF/WebP nền trong suốt; ảnh lớn được tự thu nhỏ) mà bạn có quyền sử dụng — ảnh chỉ lưu trên trình duyệt đó.",
     "Thỉnh thoảng (khoảng 5–10 phút một lần) bé Mochi sẽ hiện một câu động viên nhỏ; bấm vào bong bóng để ẩn. Muốn tắt: Cài đặt → Giao diện → Lời động viên.",
   ]),
   A("ket-noi", "folders", "Lấy tài liệu từ Google Drive, Notion", [
