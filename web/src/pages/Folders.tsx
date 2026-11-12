@@ -67,19 +67,28 @@ export default function Folders() {
                 </button>
               </li>
             ))}
-            {folders.length === 0 && <li className="px-3 py-4 text-sm text-muted">Chưa có thư mục nào.</li>}
+            {folders.length === 0 && <li className="px-3 pb-2 pt-3 text-sm text-muted">Chưa có thư mục nào.</li>}
+            {count(NONE) > 0 && (
+              <li className={folders.length ? "mt-2 border-t border-line pt-2" : ""}>
+                <button onClick={() => choose(NONE)} className={`relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${sel === NONE ? "bg-mist font-semibold text-ink before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-mirror" : "text-ink/80 hover:bg-mist/50"}`}>
+                  <Icon name="file" className="h-5 w-5 text-muted" />
+                  <span className="flex-1 truncate text-left">Tài liệu chưa xếp thư mục</span>
+                  <span className="text-xs text-muted">{count(NONE)}</span>
+                </button>
+              </li>
+            )}
           </ul>
         </Card>
 
         <section className="panel min-w-0">
           {!sel ? (
-            <div className="p-5"><Empty icon="folder" title="Tạo thư mục đầu tiên" action={<Btn variant="primary" onClick={() => setDialog({ kind: "create" })}><Icon name="plus" /> Tạo thư mục</Btn>}>Gom slide, giáo trình theo môn học để MindMirror đối chiếu khi bạn học.</Empty></div>
+            <div className="p-5"><Empty icon="upload" title="Tải tài liệu đầu tiên" action={<div className="flex flex-wrap justify-center gap-2"><UploadButton variant="button" onFiles={(f) => lib.upload(f, null)} /><Btn onClick={() => setDialog({ kind: "create" })}><Icon name="plus" /> Tạo thư mục</Btn></div>}>Tải slide, giáo trình lên là dùng được ngay: MindMirror đối chiếu khi bạn học, tạo sơ đồ khái niệm và lộ trình học. Thư mục chỉ để gom theo môn — không bắt buộc.</Empty></div>
           ) : (
             <>
               <div className="flex flex-col gap-4 border-b border-line p-5 xl:flex-row xl:items-start xl:justify-between">
                 <div className="flex items-center gap-3">
                   <span className={`grid h-12 w-12 place-items-center rounded-full ${current ? FOLDER_TONE[current.color] ?? FOLDER_TONE.blue : "bg-paper text-muted"}`}><Icon name="folder" className="h-6 w-6" /></span>
-                  <div><h2 className="text-lg font-bold text-ink">{current?.name ?? "Chưa xếp thư mục"}</h2><p className="text-xs text-muted">{shown.length} tài liệu</p>
+                  <div><h2 className="text-lg font-bold text-ink">{current?.name ?? "Tài liệu chưa xếp thư mục"}</h2><p className="text-xs text-muted">{shown.length} tài liệu{!current && " · vẫn tạo được sơ đồ khái niệm và lộ trình, không cần thư mục"}</p>
                     {current && (current.goal
                       ? <p className="mt-1 max-w-xl text-sm text-ink"><span className="font-medium">Mục tiêu học:</span> {current.goal} <button className="text-mirror hover:underline" onClick={() => setDialog({ kind: "rename", folder: current })}>Sửa</button></p>
                       : <button className="mt-1 text-sm text-mirror hover:underline" onClick={() => setDialog({ kind: "rename", folder: current })}>+ Thêm mục tiêu học (không bắt buộc)</button>)}
@@ -93,7 +102,12 @@ export default function Folders() {
                       <Btn variant="danger" onClick={() => setDialog({ kind: "delete", folder: current })}><Icon name="trash" /> Xoá thư mục</Btn>
                     </div>
                   )}
-                  {!current && <Btn disabled={!checked.length} onClick={() => setDialog({ kind: "move", ids: checked })}><Icon name="move" /> Chuyển vào thư mục</Btn>}
+                  {!current && (
+                    <div className="flex flex-wrap gap-2">
+                      <Btn disabled={!checked.length} onClick={() => setDialog({ kind: "move", ids: checked })}><Icon name="move" /> Chuyển vào thư mục</Btn>
+                      {shown.length > 0 && <Btn variant="primary" onClick={() => nav("/?folder=unfiled")}><Icon name="arrowRight" /> Học với các tài liệu này</Btn>}
+                    </div>
+                  )}
                   {current && (
                     <div className="flex flex-wrap gap-2">
                       <Btn variant="primary" onClick={() => nav(`/?folder=${current.id}`)}><Icon name="arrowRight" /> Học trong thư mục này</Btn>
@@ -102,7 +116,7 @@ export default function Folders() {
                 </div>
               </div>
 
-              {current && (
+              {(current || shown.length > 0) && (
                 <div role="tablist" aria-label="Nội dung thư mục" className="flex gap-1 border-b border-line px-5">
                   {([["docs", `Tài liệu (${shown.length})`], ["path", "Lộ trình"], ["graph", "Sơ đồ khái niệm"]] as const).map(([k, l]) => (
                     <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
@@ -110,12 +124,12 @@ export default function Folders() {
                   ))}
                 </div>
               )}
-              {current && tab === "path" ? (
+              {tab === "path" && (current || shown.length > 0) ? (
                 <FolderRoadmap folder={current} docs={shown} onOpenGraph={() => setTab("graph")} />
-              ) : current && tab === "graph" ? (
+              ) : tab === "graph" && (current || shown.length > 0) ? (
                 <div className="p-5">
-                  <p className="mb-4 rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink/80">Sơ đồ dạng mind map được tạo từ các tài liệu trong thư mục: AI đọc từng trang, sắp các ý chính từ chủ đề lớn tới ý con, và ghi quan hệ “cần biết trước” kèm câu trích nguyên văn làm căn cứ. Bấm vào sơ đồ để xem toàn màn hình.</p>
-                  {shown.length ? <KnowledgeGraph docs={shown} marks={[]} title={current.name} /> : <Empty icon="upload" title="Chưa có tài liệu">Sơ đồ khái niệm cần ít nhất một tài liệu trong thư mục.</Empty>}
+                  <p className="mb-4 rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink/80">Sơ đồ dạng mind map được tạo từ các tài liệu {current ? "trong thư mục" : "bạn đã tải lên"}: AI đọc từng trang, sắp các ý chính từ chủ đề lớn tới ý con, và ghi quan hệ “cần biết trước” kèm câu trích nguyên văn làm căn cứ. Bấm vào sơ đồ để xem toàn màn hình.</p>
+                  {shown.length ? <KnowledgeGraph docs={shown} marks={[]} title={current?.name ?? (shown.length === 1 ? shown[0]!.title : "Tài liệu chưa xếp thư mục")} /> : <Empty icon="upload" title="Chưa có tài liệu">Sơ đồ khái niệm cần ít nhất một tài liệu trong thư mục.</Empty>}
                 </div>
               ) : shown.length === 0 ? (
                 <div className="p-5"><Empty icon="upload" title="Thư mục chưa có tài liệu" action={<UploadButton variant="button" onFiles={(f) => lib.upload(f, current?.id ?? null)} />}>Tải lên PDF, slide PPTX hoặc ghi chú .txt/.md. Chữ được trích ngay trên trình duyệt.</Empty></div>

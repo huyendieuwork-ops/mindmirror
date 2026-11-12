@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { avg, folderProgress, knowledgeGaps, MODE_PAGE, sessionPath, sessionScore, useLearningData, weeklyTrend, within } from "../lib/data";
 import { Card, Empty, FOLDER_TONE, Icon, LineChart, PageHeader, Progress, SelectBox, timeAgo, type IconName } from "../components/ui";
-import KnowledgeGraph from "../components/KnowledgeGraph";
 
 export default function Reports() {
   const data = useLearningData({ details: 40 });
@@ -34,10 +33,6 @@ export default function Reports() {
         <Stat icon="bulb" tone="bg-[#FFF5E0] text-[#D8961E]" label="Cần ôn tập" value={needs.length} hint="Khái niệm còn vướng" />
         <Stat icon="pencil" tone="bg-[#F1ECFF] text-[#8B6FE0]" label="Lượt giải thích" value={turns} hint="Số lần bạn trả lời" />
       </div>
-
-      <Card title="Bản đồ kiến thức" subtitle="Vẽ từ đồ thị khái niệm thật (Neo4j) dựng từ tài liệu bạn chọn — mỗi quan hệ có câu căn cứ trong tài liệu. Màu nút theo kết quả các phiên học của bạn.">
-        <KnowledgeGraph docs={data.docs} marks={gaps.map((g) => ({ concept: g.concept, status: g.status }))} />
-      </Card>
 
       {empty ? (
         <section className="panel p-5"><Empty icon="chart" title="Chưa có dữ liệu trong khoảng này" action={<Link to="/check" className="text-sm font-medium text-mirror">Bắt đầu Kiểm tra kiến thức →</Link>}>Sau mỗi phiên học, MindMirror ghi nhận phần bạn tự giải thích được và phần cần ôn thêm để lập báo cáo.</Empty></section>

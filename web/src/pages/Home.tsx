@@ -30,7 +30,9 @@ export default function Home({ name }: { name: string }) {
 
   const first = name.split(/\s+/).slice(-2).join(" ");
   const current = folders.find((f) => f.id === folder) ?? null;
-  const folderDocs = current ? docs.filter((d) => d.folderId === current.id) : [];
+  // "unfiled" = học với các tài liệu chưa xếp vào thư mục nào (người dùng không bắt buộc tạo thư mục).
+  const unfiled = docs.filter((d) => !d.folderId);
+  const folderDocs = current ? docs.filter((d) => d.folderId === current.id) : folder === "unfiled" ? unfiled : [];
   const recent = sessions.slice(0, 4);
 
   async function start() {
@@ -100,11 +102,11 @@ export default function Home({ name }: { name: string }) {
           <div className="min-w-0 space-y-1.5">
             <p className="text-sm font-semibold text-ink/80">Thư mục tài liệu <span className="font-normal text-muted">(không bắt buộc)</span></p>
             <SelectBox label="Thư mục tài liệu (không bắt buộc)" value={folder} onChange={setFolder} className="w-full sm:w-72"
-              options={[{ value: "none", label: "Không dùng tài liệu" }, ...folders.map((f) => ({ value: f.id, label: `${f.name} (${docs.filter((d) => d.folderId === f.id).length} tài liệu)` }))]} />
+              options={[{ value: "none", label: "Không dùng tài liệu" }, ...(unfiled.length ? [{ value: "unfiled", label: `Tài liệu chưa xếp thư mục (${unfiled.length})` }] : []), ...folders.map((f) => ({ value: f.id, label: `${f.name} (${docs.filter((d) => d.folderId === f.id).length} tài liệu)` }))]} />
             <p className="text-xs text-muted">
               {current
                 ? current.goal ? <>Mục tiêu học của thư mục: <span className="text-ink">{current.goal}</span></> : folderDocs.length ? `AI đối chiếu với ${Math.min(5, folderDocs.length)} tài liệu trong thư mục.` : "Thư mục chưa có tài liệu — bạn vẫn học được bình thường."
-                : "Có tài liệu, câu trả lời sẽ bám sát giáo trình của bạn."}
+                : folderDocs.length ? `AI đối chiếu với ${Math.min(5, folderDocs.length)} tài liệu bạn đã tải lên (chưa xếp thư mục).` : "Có tài liệu, câu trả lời sẽ bám sát giáo trình của bạn."}
             </p>
           </div>
           <button onClick={start} disabled={!topic.trim() || starting}

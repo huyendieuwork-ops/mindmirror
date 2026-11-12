@@ -120,7 +120,7 @@ export default function FolderRoadmap({ folder, docs, onOpenGraph }: { folder: F
   // Cửa sổ 7 bước quanh bước tiếp theo cho dải xem trước.
   const from = Math.max(0, Math.min(nextIdx - 2, steps.length - 7));
   const strip = steps.slice(from, from + 7);
-  const title = folder?.name ?? "Lộ trình";
+  const title = folder?.name ?? (docs.length === 1 ? docs[0]!.title : "Tài liệu chưa xếp thư mục");
 
   return (
     <div className="p-5">
@@ -192,13 +192,13 @@ function nextStepIndex(steps: Step[]): number {
 }
 
 function stepHref(s: Step, folder: Folder | null) {
-  const q = new URLSearchParams({ topic: s.concept.name, ...(folder ? { folder: folder.id } : {}) });
+  const q = new URLSearchParams({ topic: s.concept.name, folder: folder ? folder.id : "unfiled" });
   if (s.status === "solid") q.set("mode", "reunderstand");
   else { q.set("mode", "explore"); q.set("level", s.status === "needs" ? "review" : "beginner"); }
   return `/?${q.toString()}`;
 }
 const stepAction = (s: Step) => (s.status === "solid" ? "Tự kiểm tra" : s.status === "needs" ? "Ôn lại" : "Học từ đầu");
-const checkHref = (s: Step, folder: Folder | null) => `/?${new URLSearchParams({ topic: s.concept.name, mode: "reunderstand", ...(folder ? { folder: folder.id } : {}) })}`;
+const checkHref = (s: Step, folder: Folder | null) => `/?${new URLSearchParams({ topic: s.concept.name, mode: "reunderstand", folder: folder ? folder.id : "unfiled" })}`;
 
 function ProgressRing({ value, label, size = 76 }: { value: number; label: string; size?: number }) {
   const r = size / 2 - 6, c = 2 * Math.PI * r;
