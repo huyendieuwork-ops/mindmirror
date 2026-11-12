@@ -60,7 +60,7 @@ export function pathFromModel(rows: { title: string; objective: string; checkpoi
 export function pathOpening(topic: string, path: LearningPath, docTitle?: string | null): string {
   const list = path.parts.map((p, i) => `${i + 1}. **${p.title}**`).join("\n");
   const from = path.level === "beginner" ? "từ con số 0" : path.level === "some" ? "từ phần bạn đã biết" : "theo hướng ôn tập";
-  return `Mình sẽ cùng bạn học “${topic}” ${from}${docTitle ? `, bám theo “${docTitle}”` : ""}, gồm ${path.parts.length} phần:\n\n${list}\n\nMỗi phần mình giải thích ngắn kèm ví dụ. Cuối phần có một câu **kiểm tra nhanh** để chắc bạn đã nắm rồi mới sang phần tiếp. Bạn gõ “Bắt đầu” (hoặc hỏi luôn điều đang thắc mắc) nhé.`;
+  return `Mình sẽ cùng bạn học “${topic}” ${from}${docTitle ? `, bám theo “${docTitle}”` : ""}, gồm ${path.parts.length} phần:\n\n${list}\n\nMỗi phần mình giải thích kỹ kèm ví dụ. Cuối phần có một câu **kiểm tra nhanh** để chắc bạn đã nắm rồi mới sang phần tiếp. Bạn gõ “Bắt đầu” (hoặc hỏi luôn điều đang thắc mắc) nhé.`;
 }
 
 export function pathPlanPrompt(topic: string, level: LearnerLevel, folderGoal: string | null, retrieved: RetrievedChunk[], request: string | null = null): { system: string; user: string } {
@@ -92,7 +92,7 @@ export interface PathTurn { kind: PathTurnKind; decision: Extract<PolicyDecision
 const CHECK = "**Kiểm tra nhanh:**";
 
 function teachText(p: PathPart, k: number, n: number, level: LearnerLevel): string {
-  return `giảng Phần ${k}/${n} “${esc(p.title)}” (mục tiêu: ${esc(p.objective)}; ${LEVEL_GUIDE[level]} Tối đa khoảng 220 từ, đúng 1 ví dụ cụ thể, có thể dùng bảng hoặc sơ đồ nhỏ; KHÔNG giảng sang phần sau), rồi KẾT THÚC bằng một dòng bắt đầu bằng "${CHECK}" hỏi: ${esc(p.checkpoint)} (diễn đạt lại cho tự nhiên)`;
+  return `giảng Phần ${k}/${n} “${esc(p.title)}” (mục tiêu: ${esc(p.objective)}; ${LEVEL_GUIDE[level]} Khoảng 250–400 từ, giải thích đầy đủ, đúng 1 ví dụ cụ thể, có thể dùng bảng hoặc sơ đồ nhỏ; KHÔNG giảng sang phần sau), rồi KẾT THÚC bằng một dòng bắt đầu bằng "${CHECK}" hỏi: ${esc(p.checkpoint)} (diễn đạt lại cho tự nhiên)`;
 }
 
 function nextText(path: LearningPath, topic: string, request: string | null = null): string {
@@ -130,7 +130,7 @@ export function pathDecision(s: Session, intent: UserIntent | null, limits: Limi
   if (intent) return null; // các nút khác: policy thường + ngữ cảnh phần hiện tại (pathContext)
 
   if (path.stage === "intro" || path.stage === "teach") {
-    return llm("teach", ["explain_foundation", "give_example"], `Nếu người học vừa hỏi một câu cụ thể, trả lời ngắn câu đó trước. Sau đó ${teachText(cur, k, n, path.level)}. checkpoint_passed = null.`);
+    return llm("teach", ["explain_foundation", "give_example"], `Nếu người học vừa hỏi một câu cụ thể, trả lời đầy đủ câu đó trước. Sau đó ${teachText(cur, k, n, path.level)}. checkpoint_passed = null.`);
   }
 
   // stage === "check": người học vừa trả lời câu kiểm tra.
@@ -142,7 +142,7 @@ Nếu ĐẠT: ghi nhận cụ thể bằng 1 câu (nói rõ ý nào đúng), r�
 Nếu CHƯA ĐẠT (đây là lần thử thứ hai): nêu ngắn đáp án đúng của câu kiểm tra (tối đa 4 câu), nói rằng phần này nên ôn lại sau, rồi ${nextText(path, s.state.topic, s.state.request ?? null)}.`);
   }
   return llm("check", ["acknowledge", "explain_foundation", "give_example", "give_hint"], `${judge}
-Nếu CHƯA ĐẠT: chỉ ra chỗ chưa khớp (trích ngắn lời người học), giải thích lại riêng phần này theo cách khác đơn giản hơn (tối đa 120 từ, ví dụ khác), rồi hỏi lại câu kiểm tra bằng cách diễn đạt khác, trên một dòng bắt đầu bằng "${CHECK}". KHÔNG sang phần sau.`);
+Nếu CHƯA ĐẠT: chỉ ra chỗ chưa khớp (trích ngắn lời người học), giải thích lại riêng phần này theo cách khác đơn giản hơn (khoảng 120–200 từ, ví dụ khác), rồi hỏi lại câu kiểm tra bằng cách diễn đạt khác, trên một dòng bắt đầu bằng "${CHECK}". KHÔNG sang phần sau.`);
 }
 
 /** Ngữ cảnh cho các nút gợi ý / ví dụ / giải thích rõ hơn khi đang theo dàn ý. */

@@ -110,7 +110,7 @@ export function decide(session: Session, intent: UserIntent | null, limits: Limi
   }
   if (intent === "explain_more") {
     return { kind: "llm", allowedActions: ["explain_foundation"], forcedAction: "explain_foundation",
-      directive: "Giải thích rõ hơn phần kiến thức nền đang vướng, ngắn gọn (≤ 6 câu), sau đó mời người học diễn đạt lại.",
+      directive: "Giải thích rõ hơn phần kiến thức nền đang vướng một cách đầy đủ (khoảng 150–300 từ, có ví dụ nhỏ), sau đó đặt MỘT câu hỏi mời người học diễn đạt lại.",
       targetHintLevel: 3 };
   }
   if (intent === "try") {
@@ -140,11 +140,11 @@ function freeTurn(s: LearningState, pref: Session["settings"]["supportPreference
   if (s.mode === "reunderstand" && (s.phase === "entry" || s.phase === "baseline") && s.turnCount <= 1) {
     // Hiểu lại: luôn mời tự giải thích trước, không giảng.
     allowed = ["ask_explain", "ask_clarification", "ask_why"];
-    directives.push("Đây là đầu phiên Hiểu lại: mời người học tự giải thích bằng lời của họ trước. KHÔNG giảng bài.");
+    directives.push("Đây là đầu phiên Hiểu lại: KHÔNG giảng đáp án. Viết 2–4 câu giới thiệu phạm vi chủ đề và gợi ý những khía cạnh nên nói tới (không nêu nội dung đáp án), rồi mời người học tự giải thích bằng lời của họ bằng MỘT câu hỏi.");
   } else if (s.mode === "explore" && s.phase === "entry" && concreteQuestion) {
     // Đợt 2: người học đã hỏi một câu cụ thể → trả lời câu đó (theo thứ tự nguồn), rồi mới gợi hướng tiếp.
     allowed = ["explain_foundation", "give_example", "suggest_directions", "acknowledge"];
-    directives.push("Đầu phiên Khám phá và người học đã hỏi một câu cụ thể: trả lời ngắn gọn đúng câu đó trước (theo thứ tự nguồn E4), rồi gợi 2–3 hướng tìm hiểu tiếp. Không ép kiểm tra.");
+    directives.push("Đầu phiên Khám phá và người học đã hỏi một câu cụ thể: trả lời ĐẦY ĐỦ đúng câu đó trước (theo A1–A2 và thứ tự nguồn E4), nêu ngắn 2–3 hướng tìm hiểu tiếp, rồi kết thúc bằng MỘT câu hỏi cho người học. Không ép kiểm tra.");
   } else if (s.mode === "explore" && s.phase === "entry") {
     allowed = ["ask_clarification", "suggest_directions", "acknowledge"];
     directives.push("Đầu phiên Khám phá: làm rõ điều muốn tìm hiểu hoặc đề xuất 2–4 hướng để chọn. Không ép kiểm tra.");
