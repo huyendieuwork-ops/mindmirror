@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase, signOut } from "../lib/supabase";
 import { buildNotices, pref, setPref, useLearningData, MODE_PAGE, sessionPath } from "../lib/data";
 import { Avatar, Icon, timeAgo, fmtDate, type IconName } from "./ui";
+import Onboarding, { openOnboarding } from "./Onboarding";
 
 export interface UserInfo { name: string; email: string | null; avatar: string | null }
 
@@ -88,6 +89,7 @@ export default function Layout({ children, user }: { children: ReactNode; user: 
         <main className="px-4 py-6 sm:px-8 sm:py-8">{children}</main>
       </div>
       {palette && <CommandPalette onClose={() => setPalette(false)} />}
+      <Onboarding userKey={user.email ?? "local"} />
     </div>
   );
 }
@@ -112,6 +114,7 @@ function UserMenu({ user }: { user: UserInfo }) {
           </div>
           <button role="menuitem" onClick={() => { setOpen(false); nav("/settings"); }} className="flex w-full items-center gap-3 px-4 py-3 text-sm text-ink hover:bg-mist/60"><Icon name="gear" /> Cài đặt tài khoản</button>
           <button role="menuitem" onClick={() => { setOpen(false); nav("/help"); }} className="flex w-full items-center gap-3 px-4 py-3 text-sm text-ink hover:bg-mist/60"><Icon name="help" /> Trợ giúp & phản hồi</button>
+          <button role="menuitem" onClick={() => { setOpen(false); openOnboarding(); }} className="flex w-full items-center gap-3 px-4 py-3 text-sm text-ink hover:bg-mist/60"><Icon name="compass" /> Hướng dẫn nhanh</button>
           {supabase && <button role="menuitem" onClick={signOut} className="flex w-full items-center gap-3 border-t border-line px-4 py-3 text-sm text-ink hover:bg-mist/60"><Icon name="logout" /> Đăng xuất</button>}
         </div>
       )}
