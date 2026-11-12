@@ -469,7 +469,7 @@ async function runTurnInner(
         const canCallTools = tools.length > 0 && round < maxRounds && budget.used + 2 <= budget.max;
         const res = await callTurnModel(deps.core, {
           system: sys, user, allowed: decision.allowedActions, span: llmSpan, budget,
-          tools: tools.length ? tools : undefined, toolMode: canCallTools ? "AUTO" : "NONE", exchanges, maxOutputTokens: long ? 1500 : 900,
+          tools: tools.length ? tools : undefined, toolMode: canCallTools ? "AUTO" : "NONE", exchanges, maxOutputTokens: long ? 2200 : 1500,
           // Rule chấm điểm (Rule 3): Kiểm tra kiến thức có chấm → temperature 0 để nhãn ổn định giữa các lần; Khám phá giữ 0,4.
           temperature: s.state.mode === "reunderstand" ? 0 : 0.4,
         });
@@ -529,7 +529,7 @@ async function runTurnInner(
           return await callTurnModel(deps.core, {
             system: sys,
             user: `${user}\n${webSourcesBlock(webPassages)}\nChỉ thị bổ sung: hệ thống đã tìm nguồn chính thống cho câu hỏi này (<web_sources>). Viết lại câu trả lời: ý lấy từ trang web gắn nhãn [W1], [W2]... và thêm vào source_citations {"source":"W1","quote":"<copy NGUYÊN VĂN 5–30 từ trong đoạn W1>"}; tài liệu của người học (nếu có) vẫn là căn cứ chính; phần không có trong nguồn nào ghi "(kiến thức chung, chưa đối chiếu nguồn)". Không tự viết link. Đặt needs_source=false.`,
-            allowed: decision.allowedActions, span: llmSpan, budget, toolMode: "NONE", exchanges: [], maxOutputTokens: long ? 1500 : 900, temperature: 0.4,
+            allowed: decision.allowedActions, span: llmSpan, budget, toolMode: "NONE", exchanges: [], maxOutputTokens: long ? 2200 : 1500, temperature: 0.4,
           });
         } catch (e) {
           if (!(e instanceof AgentUnavailableError)) throw e;
