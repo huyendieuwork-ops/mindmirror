@@ -17,7 +17,7 @@ const NAV: { to: string; label: string; icon: IconName; match: RegExp }[] = [
 
 const CRUMB: [RegExp, string][] = [
   [/^\/$/, "Bắt đầu học"], [/^\/check/, "Kiểm tra hiểu biết"], [/^\/explore/, "Khám phá"], [/^\/folders/, "Thư mục"],
-  [/^\/reports/, "Tiến độ"], [/^\/settings/, "Cài đặt"], [/^\/history/, "Lịch sử học tập"], [/^\/library/, "Kết nối học liệu"],
+  [/^\/reports/, "Tiến độ"], [/^\/settings/, "Cài đặt"], [/^\/history/, "Lịch sử học tập"], [/^\/library/, "Thư viện tài liệu"],
   [/^\/help/, "Trung tâm trợ giúp"], [/^\/s\//, "Phiên học"],
 ];
 
