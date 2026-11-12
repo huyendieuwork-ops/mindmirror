@@ -1,5 +1,6 @@
 import { GeminiProvider } from "./providers/gemini";
 import { GroqProvider } from "./providers/groq";
+import { OpenAICompatProvider, PRESETS } from "./providers/openai-compat";
 import { DemoProvider } from "./providers/mock";
 import { ModelRouter, type CallLog } from "./providers/router";
 import type { LLMProvider } from "./providers/types";
@@ -20,6 +21,12 @@ export interface Env {
   GEMINI_API_KEY?: string;
   GEMINI_API_VERSION?: string;
   GROQ_API_KEY?: string;
+  // Mô hình dự phòng khác (chuẩn OpenAI): chỉ bật khi có khoá. Thứ tự thử: FALLBACK_ORDER (mặc định "mistral,cerebras,groq").
+  CEREBRAS_API_KEY?: string;
+  MISTRAL_API_KEY?: string;
+  MODEL_CEREBRAS?: string;
+  MODEL_MISTRAL?: string;
+  FALLBACK_ORDER?: string;
   MODEL_CORE?: string;
   MODEL_LIGHT?: string;
   MODEL_FALLBACK?: string;
@@ -117,6 +124,22 @@ export function contentMode(env: Env): ContentMode {
   return env.TRACE_CONTENT === "full" || env.TRACE_CONTENT === "redacted" ? env.TRACE_CONTENT : "metadata";
 }
 
+/** Danh sách mô hình dự phòng theo thứ tự FALLBACK_ORDER; nhà nào chưa có khoá thì bỏ qua. */
+export function buildFallbacks(env: Env, gateway?: ReturnType<typeof gatewayOf>): LLMProvider[] {
+  const make: Record<string, () => LLMProvider | null> = {
+    groq: () => env.GROQ_API_KEY ? new GroqProvider({ apiKey: clean(env.GROQ_API_KEY), model: env.MODEL_FALLBACK ?? "openai/gpt-oss-120b", gateway }) : null,
+    cerebras: () => env.CEREBRAS_API_KEY
+      ? new OpenAICompatProvider({ provider: "cerebras", ...PRESETS.cerebras!, apiKey: clean(env.CEREBRAS_API_KEY), model: env.MODEL_CEREBRAS ?? PRESETS.cerebras!.model })
+      : null,
+    mistral: () => env.MISTRAL_API_KEY
+      ? new OpenAICompatProvider({ provider: "mistral", ...PRESETS.mistral!, apiKey: clean(env.MISTRAL_API_KEY), model: env.MODEL_MISTRAL ?? PRESETS.mistral!.model })
+      : null,
+  };
+  const order = (env.FALLBACK_ORDER ?? "mistral,cerebras,groq").split(",").map((x) => x.trim().toLowerCase()).filter((x) => x in make);
+  return [...new Set(order)].map((k) => make[k]!()).filter((p): p is LLMProvider => !!p);
+}
+const clean = (k: string) => k.replace(/[^\x21-\x7e]/g, ""); // bỏ ký tự vô hình khi dán khoá
+
 export function buildRouters(env: Env, onCall?: (c: CallLog) => void): { core: ModelRouter; light: ModelRouter | null; offline: boolean } {
   const gateway = gatewayOf(env);
   const prices = loadPrices(env.PRICING_JSON);
@@ -133,9 +156,7 @@ export function buildRouters(env: Env, onCall?: (c: CallLog) => void): { core: M
   const light: LLMProvider = new GeminiProvider({
     apiKey: env.GEMINI_API_KEY, model: env.MODEL_LIGHT ?? "gemini-3.5-flash-lite", apiVersion: env.GEMINI_API_VERSION, gateway,
   });
-  const fallback: LLMProvider | null = env.GROQ_API_KEY
-    ? new GroqProvider({ apiKey: env.GROQ_API_KEY, model: env.MODEL_FALLBACK ?? "openai/gpt-oss-120b", gateway })
-    : null;
+  const fallback = buildFallbacks(env, gateway);
 
   return {
     core: new ModelRouter(core, fallback, { onCall, prices }),
