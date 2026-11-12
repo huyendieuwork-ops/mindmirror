@@ -17,7 +17,7 @@ export default function Library() {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <PageHeader title="Thư viện tài liệu" subtitle="Slide, giáo trình, ghi chú. MindMirror chỉ đọc những gì bạn đưa vào đây, và luôn ghi rõ trang khi trích dẫn."
-        actions={<Link to="/folders" className="inline-flex items-center gap-2 rounded-lg border border-line bg-sheet px-3.5 py-2 text-sm font-medium text-ink hover:border-mirror/60 hover:text-mirror"><Icon name="folder" /> Sắp xếp vào thư mục</Link>} />
+        actions={<Link to="/folders" className="inline-flex items-center gap-2 rounded-lg border border-line bg-sheet px-3.5 py-2 text-sm font-medium text-ink hover:border-mirror/60 hover:text-mirror"><span className="rotate-180"><Icon name="arrowRight" /></span> Quay lại Thư mục</Link>} />
 
       <div onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
         onDrop={(e) => { e.preventDefault(); setDrag(false); lib.upload(e.dataTransfer.files); }}
