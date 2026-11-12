@@ -74,6 +74,11 @@ const ARTICLES: Article[] = [
     "Sơ đồ khái niệm: bấm “Tạo bản đồ khái niệm” — MindMirror đọc tài liệu (mỗi lần tới 40 trang, nút “Đọc hết” tự đọc tiếp), sắp các ý chính thành mind map từ chủ đề lớn tới ý con và ghi quan hệ “cần biết trước” kèm câu trích nguyên văn làm căn cứ. Bấm vào sơ đồ để xem toàn màn hình.",
     "Lộ trình: các khái niệm được sắp theo thứ tự nên học, kèm trạng thái lấy từ kết quả các phiên học (Đã nắm vững, Cần ôn lại, Chưa học). Bấm “Xem lộ trình đầy đủ” để đi từng bước toàn màn hình, mỗi bước có nút Học từ đầu / Ôn lại / Tự kiểm tra.",
   ]),
+  A("ghi-chu", "folders", "Sổ ghi chú và trợ lý ở chân trang", [
+    "Bấm vào nhân vật nhỏ ở chân trang (hoặc menu tài khoản → Sổ ghi chú) để mở sổ ghi chú. Ghi chú tự lưu khi bạn gõ và lưu trên tài khoản, đăng nhập máy khác vẫn thấy.",
+    "Tải về: chọn “Ghi chú này” hoặc “Tất cả”, rồi bấm Tải PDF hoặc Tải Word (.docx).",
+    "Cài đặt → Giao diện → Trợ lý ghi chú: chọn Đi dạo, Đứng yên hoặc Ẩn; ở Hình nhân vật bạn có thể dùng ảnh riêng (PNG/GIF/WebP nền trong suốt, ≤ 600 KB) mà bạn có quyền sử dụng — ảnh chỉ lưu trên trình duyệt đó.",
+  ]),
   A("ket-noi", "folders", "Lấy tài liệu từ Google Drive, Notion", [
     "Vào Cài đặt → Dữ liệu & quyền riêng tư → Quản lý kết nối để thêm kết nối. MindMirror chỉ đọc tài liệu bạn chọn nhập, không sửa hay xoá gì trong tài khoản đó.",
   ]),
