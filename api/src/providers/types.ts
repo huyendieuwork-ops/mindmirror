@@ -48,6 +48,8 @@ export interface LLMResponse {
   /** Model yêu cầu gọi công cụ thay vì trả lời ngay (text có thể rỗng). */
   toolCalls?: ToolCall[];
   rawModelParts?: unknown[];
+  /** Model dừng vì hết maxOutputTokens (Groq finish_reason=length, Gemini MAX_TOKENS) — JSON có thể bị cắt cụt. */
+  truncated?: boolean;
 }
 
 export interface LLMProvider {
