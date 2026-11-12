@@ -42,7 +42,7 @@ export default function Home({ name }: { name: string }) {
       const s = await api.createSession({ mode, topic: deriveTitle(q), question: q, document_ids: folderDocs.slice(0, 5).map((d) => d.id), folder_id: current?.id, level: mode === "explore" && level !== "free" ? level : null });
       invalidate();
       // Hỏi đáp tự do: gửi luôn câu hỏi làm lượt đầu để AI trả lời ngay, không hỏi lại.
-      nav(sessionPath({ id: s.id, mode }), { state: free && s.request ? { autoSend: q } : null });
+      nav(sessionPath({ id: s.id, mode }), { state: free ? { autoSend: q } : null });
     } catch (e) { setError(explain(e)); setStarting(false); }
   }
 
