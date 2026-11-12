@@ -61,6 +61,9 @@ MCP_ALLOWED_HOSTS = ""
 # Secrets — KHÔNG ghi ở đây, dùng:
 #   npx wrangler secret put GEMINI_API_KEY
 #   npx wrangler secret put GROQ_API_KEY
+#   npx wrangler secret put MISTRAL_API_KEY          # dự phòng (console.mistral.ai)
+#   npx wrangler secret put CEREBRAS_API_KEY         # dự phòng (cloud.cerebras.ai)
+#   (tuỳ chọn, biến thường) FALLBACK_ORDER = "mistral,cerebras,groq"
 #   npx wrangler secret put CF_AIG_TOKEN
 #   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 #   npx wrangler secret put CONNECTOR_ENC_KEY        # openssl rand -base64 32
