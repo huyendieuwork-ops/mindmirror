@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS, type Session } from "../agent/types";
 import { buildEmbedder, buildExporters, buildGraphStore, buildRouters, buildWebSearcher, contentMode, num, type Env } from "../env";
 import type { GraphStore } from "../graph/types";
 import { MemoryGraphStore } from "../graph/memory";
-import { buildConceptGraph, GraphBuildError } from "../graph/build";
+import { buildConceptGraph, EXTRACTOR_VERSION, GraphBuildError } from "../graph/build";
 import type { WebSearcher } from "../web/search";
 import type { ModelRouter, CallLog } from "../providers/router";
 import { MemoryStore } from "../store/memory";
@@ -443,7 +443,7 @@ export function createApp(over: AppOverrides = {}) {
   app.get("/api/graph/status", async (c) => {
     const env: Env = c.env ?? {};
     const graph = graphFor(env, c.var.store);
-    const limits = { pagesPerBuild: num(env.GRAPH_MAX_PAGES_PER_BUILD, 6), buildsPerDay: num(env.GRAPH_BUILDS_PER_DAY, 10) };
+    const limits = { pagesPerBuild: num(env.GRAPH_MAX_PAGES_PER_BUILD, 40), buildsPerDay: num(env.GRAPH_BUILDS_PER_DAY, 10) };
     if (!graph) return c.json({ configured: false, connected: false, kind: null, limits });
     try {
       const connected = await graph.ping();
@@ -465,7 +465,8 @@ export function createApp(over: AppOverrides = {}) {
       const { core } = routersFor(env, store, userId, null);
       const r = await buildConceptGraph({
         userId, documentIds: b.data.document_ids, store, graph, router: core, trace,
-        maxPages: num(env.GRAPH_MAX_PAGES_PER_BUILD, 6), maxCalls: num(env.GRAPH_MAX_CALLS_PER_BUILD, 3), buildsPerDay: num(env.GRAPH_BUILDS_PER_DAY, 10),
+        // v2: mỗi lần bấm đọc tới 40 trang, gộp thành ≤ 4 lô lớn (~12.000 ký tự/lô) — vẫn ≤ 4 lời gọi AI mỗi lần bấm.
+        maxPages: num(env.GRAPH_MAX_PAGES_PER_BUILD, 40), maxCalls: num(env.GRAPH_MAX_CALLS_PER_BUILD, 4), charsPerBatch: num(env.GRAPH_CHARS_PER_BATCH, 12000), buildsPerDay: num(env.GRAPH_BUILDS_PER_DAY, 10),
       });
       return c.json(r);
     } catch (e) {
@@ -487,7 +488,7 @@ export function createApp(over: AppOverrides = {}) {
     const owned = new Set((await store.listDocuments(userId)).map((d) => d.id));
     if (wanted.some((id) => !owned.has(id))) return c.json({ error: "document_not_found" }, 404);
     try {
-      return c.json(await graph.view(userId, wanted.length ? wanted : [...owned], 60));
+      return c.json(await graph.view(userId, wanted.length ? wanted : [...owned], 150, EXTRACTOR_VERSION));
     } catch {
       return c.json({ error: "graph_graph_unavailable" }, 503);
     }
