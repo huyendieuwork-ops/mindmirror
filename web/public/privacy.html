@@ -4,41 +4,246 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chính sách quyền riêng tư – MindMirror</title>
+<meta name="description" content="Chính sách quyền riêng tư của MindMirror: dữ liệu thu thập, cách AI xử lý, bên thứ ba, thời hạn lưu trữ, bảo mật và quyền của bạn.">
+<link rel="icon" href="/logo-mark.webp">
 <style>
-body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:720px;margin:0 auto;padding:32px 16px;line-height:1.65;color:#1f2937;background:#fff}
-h1{font-size:1.6rem}h2{font-size:1.1rem;margin-top:1.8em}a{color:#1d4ed8}
+:root{--ink:#1f2a44;--muted:#5b6b85;--line:#e3e9f3;--mirror:#4a86db;--mist:#eef4fd;--paper:#f6f9fd;--sheet:#fff;--moss:#2e9f7e;--amber:#b07a12}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--paper);line-height:1.7;font-size:16px}
+a{color:var(--mirror)}
+.wrap{max-width:880px;margin:0 auto;padding:24px 16px 64px}
+header.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--ink);text-decoration:none;font-size:1.1rem}
+.brand img{width:32px;height:32px}
+.back{font-size:.9rem;text-decoration:none;border:1px solid var(--line);background:var(--sheet);padding:6px 12px;border-radius:10px;color:var(--ink)}
+.hero{background:linear-gradient(135deg,#4a86db,#7dc4fa);color:#fff;border-radius:22px;padding:28px 24px}
+.hero h1{margin:0;font-size:1.75rem;line-height:1.25}
+.hero p{margin:.5em 0 0;opacity:.95}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.meta span{background:rgba(255,255,255,.18);border-radius:999px;padding:3px 12px;font-size:.82rem}
+.card{background:var(--sheet);border:1px solid var(--line);border-radius:18px;padding:20px 22px;margin-top:18px}
+.summary ul{margin:.4em 0 0;padding-left:1.2em}
+.summary li{margin:.25em 0}
+nav.toc ol{columns:2;column-gap:28px;margin:.4em 0 0;padding-left:1.3em;font-size:.94rem}
+nav.toc li{break-inside:avoid;margin:.15em 0}
+nav.toc a{text-decoration:none}
+h2{font-size:1.2rem;margin:0 0 .4em;scroll-margin-top:16px}
+h3{font-size:1rem;margin:1.1em 0 .3em}
+section.card p:first-of-type{margin-top:0}
+ul{padding-left:1.25em}li{margin:.3em 0}
+table{width:100%;border-collapse:collapse;font-size:.92rem;margin-top:.6em}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:var(--mist);font-weight:600}
+.tablewrap{overflow-x:auto}
+.note{background:#fff8e6;border:1px solid #f3dfa6;border-radius:12px;padding:10px 14px;font-size:.93rem}
+.ok{color:var(--moss);font-weight:600}
+.team{display:flex;flex-wrap:wrap;gap:8px;margin-top:.5em}
+.team span{background:var(--mist);color:var(--ink);border-radius:999px;padding:3px 12px;font-size:.9rem}
+footer{margin-top:28px;text-align:center;color:var(--muted);font-size:.88rem}
+@media (max-width:640px){nav.toc ol{columns:1}.hero h1{font-size:1.45rem}.card{padding:16px}}
 </style>
 </head>
 <body>
-<h1>Chính sách quyền riêng tư – MindMirror</h1>
-<p>Cập nhật: 31/10/2026</p>
-<p>MindMirror là sản phẩm của bài tập lớn môn học (Agentic AI), giúp người học tự giải thích lại kiến thức và nhận phản hồi. Trang này mô tả dữ liệu MindMirror thu thập và cách sử dụng.</p>
+<div class="wrap">
+<header class="top">
+  <a class="brand" href="/"><img src="/logo-mark.webp" alt=""> MindMirror</a>
+  <a class="back" href="/">← Quay lại MindMirror</a>
+</header>
 
-<h2>1. Dữ liệu thu thập</h2>
-<ul>
-<li><b>Thông tin tài khoản Google:</b> tên, email và ảnh đại diện, chỉ dùng để đăng nhập và nhận diện tài khoản. MindMirror không truy cập Gmail, Google Drive hay dữ liệu Google nào khác.</li>
-<li><b>Nội dung học tập:</b> các phiên trò chuyện, câu trả lời, thẻ Gương Hiểu Biết và cài đặt cá nhân.</li>
-<li><b>Tài liệu bạn tải lên:</b> phần chữ trích từ PDF/slide do bạn chủ động chọn.</li>
-<li><b>Dữ liệu kỹ thuật:</b> thời gian xử lý, số token, lỗi hệ thống. Mặc định không ghi nội dung học tập vào nhật ký kỹ thuật.</li>
-</ul>
+<div class="hero">
+  <h1>Chính sách quyền riêng tư</h1>
+  <p>MindMirror tôn trọng dữ liệu học tập của bạn. Trang này giải thích rõ chúng tôi thu thập gì, AI xử lý ra sao, ai được tiếp cận, lưu trong bao lâu và bạn có những quyền gì.</p>
+  <div class="meta"><span>Có hiệu lực: 13/11/2026</span><span>Thay thế bản ngày 31/10/2026</span><span>Áp dụng cho mindmirror-vn.pages.dev</span></div>
+</div>
 
-<h2>2. Mục đích sử dụng</h2>
-<p>Dữ liệu chỉ dùng để vận hành các tính năng học tập: lưu phiên học, đối chiếu với tài liệu của bạn và tạo phản hồi. Chúng tôi không bán dữ liệu, không dùng cho quảng cáo.</p>
+<section class="card summary" aria-label="Tóm tắt nhanh">
+  <h2>Tóm tắt nhanh</h2>
+  <ul>
+    <li>Chỉ thu thập những gì cần để học: thông tin đăng nhập Google cơ bản, phiên học, tài liệu <b>bạn chủ động tải lên</b>, cài đặt.</li>
+    <li>Tệp gốc (PDF, slide) <b>không được tải lên máy chủ</b>: chữ được trích ngay trên trình duyệt, máy chủ chỉ lưu phần chữ.</li>
+    <li>Nội dung cần thiết của mỗi lượt học được gửi tới mô hình AI (Google Gemini, dự phòng Groq) để tạo câu trả lời.</li>
+    <li><span class="ok">Không bán dữ liệu, không quảng cáo, không dùng để chấm điểm học tập chính thức.</span></li>
+    <li>Bạn tự tải về hoặc xoá dữ liệu của mình bất cứ lúc nào trong <b>Cài đặt</b>.</li>
+  </ul>
+</section>
 
-<h2>3. Bên thứ ba xử lý dữ liệu</h2>
-<ul>
-<li><b>Supabase:</b> lưu trữ cơ sở dữ liệu và xác thực đăng nhập.</li>
-<li><b>Cloudflare:</b> lưu trữ và chạy ứng dụng web.</li>
-<li><b>Google Gemini API</b> (và nhà cung cấp dự phòng nếu có): nhận nội dung cần thiết của lượt trò chuyện để tạo phản hồi.</li>
-<li><b>Dịch vụ tìm kiếm nguồn chính thống</b> (Tavily hoặc Wikipedia): ở chế độ Khám phá, khi tài liệu của bạn chưa đủ căn cứ, một cụm từ khoá ngắn rút từ câu hỏi (tối đa 200 ký tự, đã bỏ email/số điện thoại/đường link) có thể được gửi đi để tìm trang trong danh sách nguồn chính thống. Không gửi tài liệu, tên hay email của bạn. Kết quả tìm (trang công khai) được lưu tối đa 7 ngày để dùng lại, không kèm câu hỏi gốc.</li>
-<li><b>Neo4j Aura</b> (bản đồ khái niệm, chỉ khi bạn bấm “Tạo bản đồ khái niệm” ở trang Báo cáo): lưu tên khái niệm, quan hệ giữa chúng, câu căn cứ ngắn trích từ tài liệu bạn chọn và số trang, gắn với mã tài khoản của bạn. Đoạn tài liệu được gửi tới Gemini để rút khái niệm (như khi trò chuyện). Xoá tài liệu sẽ xoá phần bản đồ dựng từ tài liệu đó; xoá toàn bộ dữ liệu sẽ xoá cả bản đồ.</li>
-</ul>
+<nav class="card toc" aria-label="Mục lục">
+  <h2>Mục lục</h2>
+  <ol>
+    <li><a href="#gioi-thieu">Chúng tôi là ai</a></li>
+    <li><a href="#thu-thap">Dữ liệu chúng tôi thu thập</a></li>
+    <li><a href="#muc-dich">Mục đích sử dụng</a></li>
+    <li><a href="#ai">AI xử lý dữ liệu của bạn thế nào</a></li>
+    <li><a href="#ben-thu-ba">Bên thứ ba xử lý dữ liệu</a></li>
+    <li><a href="#nuoc-ngoai">Chuyển dữ liệu ra nước ngoài</a></li>
+    <li><a href="#luu-tru">Thời hạn lưu trữ</a></li>
+    <li><a href="#bao-mat">Bảo mật</a></li>
+    <li><a href="#quyen">Quyền của bạn</a></li>
+    <li><a href="#trinh-duyet">Dữ liệu lưu trên trình duyệt</a></li>
+    <li><a href="#luu-y">Lưu ý khi dùng</a></li>
+    <li><a href="#tre-em">Người dùng chưa đủ tuổi</a></li>
+    <li><a href="#thay-doi">Thay đổi chính sách</a></li>
+    <li><a href="#lien-he">Liên hệ</a></li>
+  </ol>
+</nav>
 
-<h2>4. Quyền của bạn</h2>
-<p>Bạn có thể xoá lịch sử phiên học hoặc toàn bộ dữ liệu của mình trong phần <b>Cài đặt</b> của ứng dụng, hoặc liên hệ với chúng tôi để được hỗ trợ.</p>
+<section class="card" id="gioi-thieu">
+  <h2>1. Chúng tôi là ai</h2>
+  <p>MindMirror là trợ lý học tập giúp người học tự giải thích lại kiến thức, nhận phản hồi có trích dẫn nguồn và theo dõi tiến độ. Đây là <b>sản phẩm học tập, phi thương mại</b> do nhóm sinh viên Trường Đại học Kinh tế Quốc dân xây dựng; nhóm là bên quyết định mục đích và cách xử lý dữ liệu trong chính sách này.</p>
+  <div class="team"><span>Hoàng Nhật Quỳnh</span><span>Lê Như Ngọc Mai</span><span>Đặng Thị Huyền Diệu</span><span>Trần Thị Xuân Nhi</span><span>Nguyễn Thị Nhân</span></div>
+  <p>Chính sách này áp dụng khi bạn dùng ứng dụng web MindMirror. Việc xử lý dữ liệu được thực hiện theo nguyên tắc của pháp luật Việt Nam về bảo vệ dữ liệu cá nhân: đúng mục đích, tối thiểu, minh bạch và tôn trọng quyền của chủ thể dữ liệu.</p>
+</section>
 
-<h2>5. Liên hệ</h2>
-<p>Email: <a href="mailto:huyendieu1122006@gmail.com">huyendieu1122006@gmail.com</a></p>
-<p><a href="/">← Quay lại MindMirror</a></p>
+<section class="card" id="thu-thap">
+  <h2>2. Dữ liệu chúng tôi thu thập</h2>
+  <h3>2.1. Thông tin tài khoản</h3>
+  <ul>
+    <li>Khi đăng nhập bằng Google: <b>tên, địa chỉ email, ảnh đại diện</b> và mã định danh tài khoản. Dùng để đăng nhập, nhận diện tài khoản và hiển thị tên của bạn.</li>
+    <li>MindMirror <b>không</b> truy cập Gmail, Google Drive, danh bạ hay dữ liệu Google nào khác qua bước đăng nhập.</li>
+  </ul>
+  <h3>2.2. Nội dung học tập</h3>
+  <ul>
+    <li>Phiên học: chủ đề/câu hỏi bạn nhập, chế độ học (Kiểm tra hiểu biết, Khám phá, Học từ đầu), trình độ bạn chọn, toàn bộ tin nhắn giữa bạn và AI.</li>
+    <li>Kết quả do hệ thống tạo ra: tiêu chí đánh giá, các ý bạn đã nói được (kèm câu nguyên văn của bạn làm căn cứ), điểm còn vướng, <b>Thẻ Gương</b>, dàn ý học từ đầu và kết quả câu kiểm tra nhanh.</li>
+    <li>Thư mục, tên thư mục, màu sắc và <b>mục tiêu học</b> bạn đặt cho từng thư mục.</li>
+    <li>Cài đặt cá nhân: phong cách trả lời, mức thử thách, cỡ chữ và các tuỳ chọn khác.</li>
+  </ul>
+  <h3>2.3. Tài liệu bạn tải lên</h3>
+  <ul>
+    <li>Bạn chủ động chọn tệp (PDF có lớp chữ, PPTX, TXT, MD). <b>Chữ được trích ngay trên trình duyệt</b>; máy chủ nhận và lưu: tiêu đề, số trang, phần chữ đã cắt thành các đoạn ngắn kèm số trang.</li>
+    <li>Để tìm theo nghĩa, mỗi đoạn có thể được chuyển thành <b>véc-tơ số (embedding)</b> nhờ dịch vụ của Google. Véc-tơ này không đọc ngược ra được thành văn bản gốc một cách trực tiếp.</li>
+    <li>Nếu bạn nhập tài liệu từ Google Drive hoặc Notion qua mục <b>Kết nối</b>, chỉ những tệp bạn chọn mới được đọc.</li>
+  </ul>
+  <h3>2.4. Bản đồ khái niệm và lộ trình</h3>
+  <p>Khi bạn bấm “Tạo bản đồ khái niệm”, hệ thống lưu: tên khái niệm, mô tả ngắn, quan hệ “cần biết trước/liên quan”, khái niệm cha – con, câu trích ngắn từ tài liệu làm căn cứ và số trang, gắn với mã tài khoản của bạn. Lộ trình học được tính từ bản đồ này và kết quả các phiên học, không lưu riêng.</p>
+  <h3>2.5. Kết nối dịch vụ ngoài (tuỳ chọn)</h3>
+  <p>Nếu bạn thêm kết nối (máy chủ MCP của Google Drive, Notion…), chúng tôi lưu địa chỉ máy chủ và khoá truy cập bạn cung cấp. Khoá truy cập được <b>mã hoá AES-GCM</b> trước khi lưu và chỉ được giải mã trên máy chủ khi bạn nhập tài liệu.</p>
+  <h3>2.6. Dữ liệu kỹ thuật</h3>
+  <ul>
+    <li>Thời gian xử lý, số token, chi phí ước tính, nhà cung cấp mô hình đã dùng, mã lỗi, cờ an toàn (ví dụ “phát hiện câu giống chỉ thị cho AI”), mã tài khoản và mã phiên dạng định danh nội bộ.</li>
+    <li>Bộ đếm hạn mức trong ngày (số phiên học, số lần tìm nguồn web, số lần dựng bản đồ).</li>
+    <li>Theo cấu hình mặc định, nhật ký kỹ thuật <b>chỉ ghi siêu dữ liệu, không ghi nội dung tin nhắn hay tài liệu</b> của bạn.</li>
+  </ul>
+  <p>Chúng tôi <b>không</b> thu thập vị trí chính xác, danh bạ, dữ liệu sinh trắc học và không dùng cookie quảng cáo hay công cụ theo dõi của bên thứ ba.</p>
+</section>
+
+<section class="card" id="muc-dich">
+  <h2>3. Mục đích sử dụng</h2>
+  <ul>
+    <li><b>Vận hành tính năng học tập:</b> mở và lưu phiên học, tạo câu trả lời, đối chiếu với tài liệu của bạn, dựng bản đồ khái niệm, lộ trình, Thẻ Gương và trang Tiến độ.</li>
+    <li><b>An toàn và chống lạm dụng:</b> phát hiện nội dung cài cắm chỉ thị cho AI, chặn yêu cầu lấy dữ liệu của người khác, áp dụng hạn mức mỗi ngày.</li>
+    <li><b>Đảm bảo chất lượng:</b> theo dõi lỗi, độ trễ, chi phí. Bộ đánh giá chất lượng tự động của nhóm dùng <b>dữ liệu mẫu do nhóm soạn</b>, không dùng dữ liệu học tập của bạn.</li>
+    <li><b>Hỗ trợ:</b> trả lời khi bạn liên hệ.</li>
+  </ul>
+  <p>Chúng tôi <b>không</b> bán hay cho thuê dữ liệu, <b>không</b> dùng cho quảng cáo, <b>không</b> dùng kết quả trên MindMirror để chấm điểm hay đánh giá năng lực chính thức của bạn. Các khảo sát trải nghiệm (nếu có) là tự nguyện, thực hiện riêng và chỉ dùng câu trả lời bạn tự gửi.</p>
+</section>
+
+<section class="card" id="ai">
+  <h2>4. AI xử lý dữ liệu của bạn thế nào</h2>
+  <ul>
+    <li>Mỗi lượt học, hệ thống gửi tới mô hình AI những gì cần cho lượt đó: tin nhắn của bạn, tóm tắt các lượt trước, chủ đề/câu hỏi ban đầu, tiêu chí đánh giá, mục tiêu học của thư mục và các đoạn tài liệu liên quan (lấy từ tối đa 5 tài liệu bạn chọn). Không gửi email của bạn.</li>
+    <li>Mô hình chính là <b>Google Gemini</b>, được gọi qua một máy chủ trung gian của chúng tôi trên Cloudflare đặt tại Bắc Mỹ (chỉ chuyển tiếp, không lưu nội dung). Khi Gemini quá tải, hệ thống có thể dùng mô hình dự phòng trên <b>Groq</b> (qua Cloudflare AI Gateway, đã tắt ghi nhật ký nội dung ở phía gateway).</li>
+    <li>Ở chế độ Khám phá, nếu tài liệu của bạn chưa đủ căn cứ, hệ thống có thể gửi <b>một cụm từ khoá ngắn</b> (tối đa 200 ký tự, đã loại email, số điện thoại, đường link) tới dịch vụ tìm kiếm để tìm trang trong danh sách nguồn chính thống. Không gửi tài liệu, tên hay email của bạn.</li>
+    <li>Khi dựng bản đồ khái niệm, các đoạn tài liệu bạn chọn được gửi tới mô hình AI để rút khái niệm và quan hệ. Mọi trích dẫn được hệ thống đối chiếu lại với chữ thật trong tài liệu trước khi lưu.</li>
+    <li>Câu trả lời của AI có thể sai. MindMirror ghi nguồn cho từng ý và đánh dấu phần “kiến thức chung, chưa đối chiếu nguồn” để bạn tự kiểm tra.</li>
+  </ul>
+  <p class="note"><b>Lưu ý về điều khoản của nhà cung cấp AI:</b> sản phẩm có thể dùng gói miễn phí của Gemini API. Theo điều khoản của Google cho gói này, nội dung gửi tới API và câu trả lời có thể được Google dùng để cung cấp và cải thiện dịch vụ, và có thể được người đánh giá của Google xem. Vì vậy, <b>đừng nhập hoặc tải lên thông tin nhạy cảm</b> (mật khẩu, số giấy tờ tuỳ thân, thông tin sức khoẻ, tài chính, dữ liệu cá nhân của người khác).</p>
+</section>
+
+<section class="card" id="ben-thu-ba">
+  <h2>5. Bên thứ ba xử lý dữ liệu</h2>
+  <p>Chúng tôi chỉ chia sẻ dữ liệu với các nhà cung cấp hạ tầng cần thiết để vận hành sản phẩm. Mỗi bên xử lý theo điều khoản và chính sách bảo mật của họ.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Nhà cung cấp</th><th>Vai trò</th><th>Dữ liệu liên quan</th></tr></thead>
+    <tbody>
+      <tr><td>Supabase</td><td>Cơ sở dữ liệu, xác thực đăng nhập</td><td>Tài khoản, phiên học, tài liệu (phần chữ, véc-tơ), thư mục, cài đặt, kết nối (đã mã hoá)</td></tr>
+      <tr><td>Cloudflare</td><td>Lưu trữ và chạy ứng dụng web, máy chủ trung gian gọi AI, AI Gateway</td><td>Lưu lượng truy cập; nội dung đi qua để xử lý, không lưu</td></tr>
+      <tr><td>Google</td><td>Đăng nhập Google; mô hình Gemini; tạo embedding</td><td>Thông tin đăng nhập; nội dung lượt học và đoạn tài liệu cần thiết (mục 4)</td></tr>
+      <tr><td>Groq</td><td>Mô hình AI dự phòng khi Gemini quá tải</td><td>Nội dung lượt học cần thiết (chỉ khi dùng dự phòng)</td></tr>
+      <tr><td>Tavily hoặc Wikipedia</td><td>Tìm nguồn chính thống ở chế độ Khám phá</td><td>Cụm từ khoá ngắn đã lọc thông tin cá nhân</td></tr>
+      <tr><td>Neo4j Aura</td><td>Lưu bản đồ khái niệm</td><td>Khái niệm, quan hệ, câu căn cứ ngắn, số trang, mã tài khoản</td></tr>
+      <tr><td>Langfuse (vùng Nhật Bản)</td><td>Giám sát chất lượng, lỗi, độ trễ, chi phí</td><td>Siêu dữ liệu kỹ thuật và mã định danh nội bộ; mặc định không có nội dung tin nhắn/tài liệu</td></tr>
+      <tr><td>Google Drive, Notion… (tuỳ chọn)</td><td>Nguồn nhập tài liệu khi bạn tự kết nối</td><td>Chỉ các tệp bạn chọn nhập</td></tr>
+    </tbody>
+  </table></div>
+  <p>Ngoài các trường hợp trên, chúng tôi chỉ cung cấp dữ liệu khi có yêu cầu hợp pháp của cơ quan nhà nước có thẩm quyền theo quy định của pháp luật.</p>
+</section>
+
+<section class="card" id="nuoc-ngoai">
+  <h2>6. Chuyển dữ liệu ra nước ngoài</h2>
+  <p>Máy chủ của các nhà cung cấp ở mục 5 có thể đặt ngoài Việt Nam (ví dụ Hoa Kỳ, Nhật Bản, châu Âu, Singapore). Khi dùng MindMirror, dữ liệu của bạn có thể được truyền và lưu tại các quốc gia này. Chúng tôi chỉ chọn nhà cung cấp có cam kết bảo mật và mã hoá đường truyền.</p>
+</section>
+
+<section class="card" id="luu-tru">
+  <h2>7. Thời hạn lưu trữ</h2>
+  <ul>
+    <li><b>Phiên học, tài liệu, thư mục, bản đồ khái niệm, cài đặt:</b> lưu cho tới khi bạn xoá, hoặc tới khi dự án kết thúc và nhóm thông báo ngừng dịch vụ.</li>
+    <li><b>Kết quả tìm nguồn web:</b> lưu đệm tối đa 7 ngày (chỉ trang công khai, không kèm câu hỏi gốc).</li>
+    <li><b>Nhật ký kỹ thuật:</b> theo thời hạn lưu của dịch vụ giám sát; không chứa nội dung học tập theo cấu hình mặc định.</li>
+    <li><b>Bộ đếm hạn mức:</b> theo ngày, chỉ dùng để giới hạn sử dụng.</li>
+    <li>Sau khi bạn xoá, dữ liệu bị xoá khỏi cơ sở dữ liệu chính ngay lập tức; bản sao lưu tự động của nhà cung cấp hạ tầng (nếu có) có thể còn trong thời gian ngắn trước khi bị ghi đè.</li>
+  </ul>
+</section>
+
+<section class="card" id="bao-mat">
+  <h2>8. Bảo mật</h2>
+  <ul>
+    <li>Toàn bộ kết nối dùng HTTPS. Mọi yêu cầu tới máy chủ đều phải có phiên đăng nhập hợp lệ.</li>
+    <li>Mọi thao tác đọc/ghi đều kiểm tra quyền theo tài khoản: bạn chỉ thấy dữ liệu của chính mình, kể cả bản đồ khái niệm.</li>
+    <li>Khoá API của các dịch vụ AI chỉ nằm trên máy chủ, không bao giờ gửi xuống trình duyệt. Khoá kết nối của bạn được mã hoá AES-GCM.</li>
+    <li>Nội dung tài liệu và trang web luôn được AI coi là dữ kiện, không phải chỉ thị; đoạn có dấu hiệu cài cắm chỉ thị được gắn cảnh báo. Câu trả lời được lọc để không lộ hướng dẫn hệ thống hay chuỗi giống khoá bí mật.</li>
+    <li>Không hệ thống nào an toàn tuyệt đối. Nếu phát hiện sự cố ảnh hưởng tới dữ liệu của bạn, nhóm sẽ thông báo qua email đăng ký trong thời gian sớm nhất.</li>
+  </ul>
+</section>
+
+<section class="card" id="quyen">
+  <h2>9. Quyền của bạn</h2>
+  <ul>
+    <li><b>Được biết và xem dữ liệu:</b> toàn bộ phiên học, Thẻ Gương, tài liệu, thư mục đều hiển thị trong ứng dụng.</li>
+    <li><b>Tải dữ liệu về:</b> <i>Cài đặt → Tải dữ liệu của tôi</i> (tệp JSON gồm phiên học kèm Thẻ Gương, tài liệu, thư mục, cài đặt).</li>
+    <li><b>Chỉnh sửa:</b> đổi cài đặt, tên và mục tiêu thư mục, chuyển tài liệu giữa các thư mục.</li>
+    <li><b>Xoá:</b> xoá từng tài liệu (kèm phần bản đồ dựng từ tài liệu đó), từng thư mục (tài liệu bên trong không bị xoá), toàn bộ lịch sử học tập, hoặc <b>toàn bộ dữ liệu</b> (gõ “XOA” để xác nhận) trong <i>Cài đặt</i>.</li>
+    <li><b>Rút lại đồng ý:</b> ngừng sử dụng và xoá toàn bộ dữ liệu; bạn cũng có thể gỡ quyền của MindMirror trong phần <i>Bảo mật → Ứng dụng bên thứ ba</i> của tài khoản Google.</li>
+    <li><b>Phản đối, hạn chế xử lý, khiếu nại:</b> liên hệ nhóm theo mục 14. Nhóm sẽ phản hồi sớm nhất có thể.</li>
+  </ul>
+</section>
+
+<section class="card" id="trinh-duyet">
+  <h2>10. Dữ liệu lưu trên trình duyệt</h2>
+  <p>MindMirror dùng bộ nhớ của trình duyệt (localStorage) để lưu phiên đăng nhập và một số tuỳ chọn giao diện như thanh bên thu gọn, cỡ chữ, đã xem hướng dẫn nhanh hay chưa. Các dữ liệu này nằm trên máy của bạn, không dùng để theo dõi. Đăng xuất hoặc xoá dữ liệu trang web trong trình duyệt sẽ xoá chúng.</p>
+</section>
+
+<section class="card" id="luu-y">
+  <h2>11. Lưu ý khi dùng</h2>
+  <ul>
+    <li>Chỉ tải lên tài liệu bạn có quyền sử dụng cho mục đích học tập.</li>
+    <li>Không đưa vào tài liệu hay tin nhắn: mật khẩu, mã OTP, số CCCD/hộ chiếu, số tài khoản ngân hàng, thông tin sức khoẻ, hay dữ liệu cá nhân của người khác.</li>
+    <li>Phản hồi của AI chỉ để tham khảo khi học, không thay thế giảng viên hay giáo trình chính thức.</li>
+  </ul>
+</section>
+
+<section class="card" id="tre-em">
+  <h2>12. Người dùng chưa đủ tuổi</h2>
+  <p>MindMirror hướng tới sinh viên và người học trưởng thành. Nếu bạn dưới 16 tuổi, hãy dùng MindMirror khi có sự đồng ý và hướng dẫn của cha mẹ hoặc người giám hộ. Nếu phát hiện đã thu thập dữ liệu của trẻ em mà chưa có sự đồng ý phù hợp, chúng tôi sẽ xoá dữ liệu đó.</p>
+</section>
+
+<section class="card" id="thay-doi">
+  <h2>13. Thay đổi chính sách</h2>
+  <p>Khi có thay đổi quan trọng (ví dụ thêm nhà cung cấp mới hoặc loại dữ liệu mới), chúng tôi cập nhật trang này và ghi rõ ngày hiệu lực ở đầu trang. Tiếp tục sử dụng sau ngày hiệu lực đồng nghĩa với việc bạn đồng ý với bản cập nhật.</p>
+</section>
+
+<section class="card" id="lien-he">
+  <h2>14. Liên hệ</h2>
+  <p>Nhóm phát triển MindMirror – sinh viên Trường Đại học Kinh tế Quốc dân.</p>
+  <p>Email: <a href="mailto:huyendieu1122006@gmail.com">huyendieu1122006@gmail.com</a></p>
+  <p>Khi gửi yêu cầu về dữ liệu, vui lòng dùng email trùng với tài khoản đăng nhập để chúng tôi xác minh đúng chủ tài khoản.</p>
+</section>
+
+<footer>
+  <p>© 2026 MindMirror · Sản phẩm học tập, phi thương mại của nhóm sinh viên Trường Đại học Kinh tế Quốc dân</p>
+  <p><a href="/">← Quay lại MindMirror</a></p>
+</footer>
+</div>
 </body>
 </html>
