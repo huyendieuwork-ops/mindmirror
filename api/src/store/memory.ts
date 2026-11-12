@@ -1,5 +1,5 @@
 import type { Chunk, LibraryDocument, MirrorCard, RetrievedChunk, Session, TurnResult, UserSettings } from "../agent/types";
-import type { ChunkQuery, ConnectorRecord, FolderRecord, SessionListItem, Store, TraceRecord, UsageEntry } from "./types";
+import type { ChunkQuery, ConnectorRecord, FolderRecord, NoteRecord, SessionListItem, Store, TraceRecord, UsageEntry } from "./types";
 import { bm25Rank, rrf, vectorRank } from "../rag/hybrid";
 import type { WebPassage } from "../web/search";
 
@@ -14,6 +14,7 @@ export class MemoryStore implements Store {
   chunks = new Map<string, Chunk[]>(); // documentId → chunks
   connectors = new Map<string, ConnectorRecord>();
   folders = new Map<string, FolderRecord>();
+  notes = new Map<string, NoteRecord>();
   traces: TraceRecord[] = [];
   webCache = new Map<string, { passages: WebPassage[]; expiresAt: string }>();
   webSearches: { userId: string; at: string }[] = [];
@@ -64,6 +65,7 @@ export class MemoryStore implements Store {
       for (const d of await this.listDocuments(userId)) await this.deleteDocument(userId, d.id);
       for (const c of await this.listConnectors(userId)) this.connectors.delete(c.id);
       for (const [id, f] of this.folders) if (f.userId === userId) this.folders.delete(id);
+      for (const [id, n] of this.notes) if (n.userId === userId) this.notes.delete(id);
       this.traces = this.traces.filter((t) => t.userId !== userId);
     }
   }
@@ -124,6 +126,19 @@ export class MemoryStore implements Store {
     return [...this.folders.values()].filter((f) => f.userId === userId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((f) => structuredClone(f));
   }
   async saveFolder(f: FolderRecord) { this.folders.set(f.id, structuredClone(f)); }
+  async listNotes(userId: string) {
+    return [...this.notes.values()].filter((n) => n.userId === userId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((n) => structuredClone(n));
+  }
+  async saveNote(n: NoteRecord) {
+    const old = this.notes.get(n.id);
+    if (old && old.userId !== n.userId) throw new Error("note belongs to another user");
+    this.notes.set(n.id, structuredClone(n));
+  }
+  async deleteNote(userId: string, id: string) {
+    const n = this.notes.get(id);
+    if (!n || n.userId !== userId) return false;
+    return this.notes.delete(id);
+  }
   async deleteFolder(userId: string, id: string) {
     const f = this.folders.get(id);
     if (!f || f.userId !== userId) return false;
