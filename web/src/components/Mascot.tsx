@@ -15,11 +15,43 @@ export const MASCOT_EVENT = "mm:mascot";
 export const mascotMode = (): MascotMode => pref<MascotMode>("mascot-mode", "walk");
 export const mascotImage = (): string | null => pref<string | null>("mascot-img", null);
 export const mascotCheer = (): boolean => pref<boolean>("mascot-cheer", true);
-export function setMascot(p: { mode?: MascotMode; img?: string | null; cheer?: boolean }) {
+/** Lưu cài đặt nhân vật; trả về false nếu trình duyệt không lưu được ảnh (bộ nhớ đầy, chế độ riêng tư…). */
+export function setMascot(p: { mode?: MascotMode; img?: string | null; cheer?: boolean }): boolean {
+  let ok = true;
   if (p.mode) setPref("mascot-mode", p.mode);
-  if (p.img !== undefined) setPref("mascot-img", p.img);
+  if (p.img !== undefined) {
+    try {
+      if (p.img === null) localStorage.removeItem("mm-mascot-img");
+      else localStorage.setItem("mm-mascot-img", JSON.stringify(p.img));
+      ok = mascotImage() === p.img;
+    } catch { ok = false; }
+  }
   if (p.cheer !== undefined) setPref("mascot-cheer", p.cheer);
   window.dispatchEvent(new Event(MASCOT_EVENT));
+  return ok;
+}
+
+/**
+ * Chuẩn bị ảnh nhân vật người dùng tải lên: thu nhỏ về tối đa 320px (giữ nền trong suốt) để lưu gọn trên trình duyệt.
+ * GIF nhỏ (≤ 1 MB) giữ nguyên để không mất chuyển động.
+ */
+export async function prepareMascotImage(f: File): Promise<string> {
+  const readUrl = () => new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => rej(r.error); r.readAsDataURL(f); });
+  if (f.type === "image/gif" && f.size <= 1024 * 1024) return readUrl();
+  const src = URL.createObjectURL(f);
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("decode")); i.src = src; });
+    const w0 = img.naturalWidth || 320, h0 = img.naturalHeight || 320;
+    const k = Math.min(1, 320 / Math.max(w0, h0));
+    if (k === 1 && f.size <= 300 * 1024 && f.type !== "image/svg+xml") return readUrl();
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(w0 * k)); c.height = Math.max(1, Math.round(h0 * k));
+    const g = c.getContext("2d")!;
+    g.imageSmoothingQuality = "high";
+    g.drawImage(img, 0, 0, c.width, c.height);
+    const webp = c.toDataURL("image/webp", 0.9);
+    return webp.startsWith("data:image/webp") ? webp : c.toDataURL("image/png");
+  } finally { URL.revokeObjectURL(src); }
 }
 
 const SIZE = 76;
