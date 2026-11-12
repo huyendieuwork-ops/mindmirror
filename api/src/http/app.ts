@@ -5,7 +5,7 @@ import { AgentUnavailableError, createSession, prepareGroundedSession, prepareLe
 import { assessLearner } from "../agent/assessment";
 import { checkUserInput } from "../agent/input-guard";
 import { DEFAULT_SETTINGS, type Session } from "../agent/types";
-import { buildEmbedder, buildExporters, buildGraphStore, buildRouters, buildWebSearcher, contentMode, num, type Env } from "../env";
+import { buildEmbedder, buildExporters, buildFallbacks, buildGraphStore, buildRouters, buildWebSearcher, contentMode, num, type Env } from "../env";
 import type { GraphStore } from "../graph/types";
 import { MemoryGraphStore } from "../graph/memory";
 import { buildConceptGraph, EXTRACTOR_VERSION, GraphBuildError } from "../graph/build";
@@ -119,6 +119,7 @@ export function createApp(over: AppOverrides = {}) {
       env: env.APP_ENV ?? "development",
       devAuth: (env.APP_ENV === "development" || env.APP_ENV === "demo") && env.DEV_AUTH_BYPASS === "true",
       model: env.GEMINI_API_KEY ? env.MODEL_CORE ?? "gemini-3.8-flash" : "demo-offline",
+      fallbacks: env.GEMINI_API_KEY ? buildFallbacks(env).map((p) => `${p.provider}:${p.model}`) : [],
       embeddings: !!env.GEMINI_API_KEY,
       tracing: [env.LANGFUSE_PUBLIC_KEY ? "langfuse" : null, env.LANGSMITH_API_KEY ? "langsmith" : null].filter(Boolean),
       webSearch: (env.WEB_SEARCH ?? "").toLowerCase() === "off" ? null : env.TAVILY_API_KEY ? "tavily" : "wikipedia",
