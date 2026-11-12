@@ -14,13 +14,84 @@ export type MascotMode = "walk" | "stand" | "hidden";
 export const MASCOT_EVENT = "mm:mascot";
 export const mascotMode = (): MascotMode => pref<MascotMode>("mascot-mode", "walk");
 export const mascotImage = (): string | null => pref<string | null>("mascot-img", null);
-export function setMascot(p: { mode?: MascotMode; img?: string | null }) {
+export const mascotCheer = (): boolean => pref<boolean>("mascot-cheer", true);
+export function setMascot(p: { mode?: MascotMode; img?: string | null; cheer?: boolean }) {
   if (p.mode) setPref("mascot-mode", p.mode);
   if (p.img !== undefined) setPref("mascot-img", p.img);
+  if (p.cheer !== undefined) setPref("mascot-cheer", p.cheer);
   window.dispatchEvent(new Event(MASCOT_EVENT));
 }
 
 const SIZE = 76;
+
+/** Lời động viên do MindMirror tự viết — hiện ngẫu nhiên mỗi 5–10 phút. */
+const CHEERS = [
+  "Cố lên nào! 💪",
+  "Bạn đang làm rất tốt đó!",
+  "Mỗi ngày tiến một chút là đủ rồi ✨",
+  "Sai cũng không sao — sai là đang học!",
+  "Nghỉ 5 phút, uống ngụm nước nha 💧",
+  "Hiểu sâu một ý còn hơn lướt mười ý.",
+  "Thử tự giải thích lại bằng lời của bạn xem!",
+  "Bạn giỏi hơn bạn nghĩ đấy 🌱",
+  "Câu hỏi hay là nửa câu trả lời rồi.",
+  "Kiên trì thêm chút nữa thôi!",
+  "Học chậm mà chắc nhé 🐢",
+  "Có ý gì hay? Ghi lại ngay kẻo quên ✎",
+  "Hôm nay bạn đã học được điều gì mới chưa?",
+  "Mochi tin bạn làm được! 🐰",
+  "Bí ở đâu thì hỏi ở đó, đừng ngại nha.",
+  "Từng bước nhỏ tạo nên chặng đường dài.",
+  "Thở sâu một hơi, rồi mình làm tiếp nào.",
+  "Ôn lại một chút trước khi học cái mới nhé!",
+  "Đừng so với người khác, so với bạn hôm qua thôi.",
+  "Tập trung 25 phút, rồi thưởng cho mình một chút 🍓",
+  "Chỗ khó nhất thường là chỗ học được nhiều nhất.",
+  "Bạn đã đi được xa rồi đó, tiếp tục nha!",
+  "Mệt thì nghỉ, đừng bỏ cuộc 💛",
+  "Giải thích được cho người khác là hiểu thật rồi!",
+  "Thêm một câu hỏi nữa thôi, bạn làm được!",
+];
+const rand = (a: number, b: number) => a + Math.random() * (b - a);
+
+/** Hẹn giờ lời động viên: lần đầu sau ~20–40 giây, sau đó 5–10 phút một lần; mỗi lần hiện ~9 giây. */
+function useCheer(active: boolean): [string | null, () => void] {
+  const [msg, setMsg] = useState<string | null>(null);
+  const last = useRef(-1);
+  useEffect(() => {
+    if (!active) { setMsg(null); return; }
+    let next: number, hide: number;
+    const schedule = (ms: number) => {
+      next = window.setTimeout(() => {
+        if (document.visibilityState === "visible") {
+          let i = Math.floor(Math.random() * CHEERS.length);
+          if (i === last.current) i = (i + 1) % CHEERS.length;
+          last.current = i;
+          setMsg(CHEERS[i]!);
+          hide = window.setTimeout(() => setMsg(null), 9000);
+        }
+        schedule(rand(5, 10) * 60_000);
+      }, ms);
+    };
+    schedule(rand(20, 40) * 1000);
+    return () => { window.clearTimeout(next); window.clearTimeout(hide); };
+  }, [active]);
+  return [msg, () => setMsg(null)];
+}
+
+function Bubble({ text, onClose, align }: { text: string; onClose: () => void; align: "left" | "center" | "right" }) {
+  const pos = align === "left" ? "left-0" : align === "right" ? "right-0" : "left-1/2 -translate-x-1/2";
+  const tail = align === "left" ? "left-8" : align === "right" ? "right-8" : "left-1/2 -translate-x-1/2";
+  return (
+    <span className={`pointer-events-auto absolute bottom-full mb-1 w-max max-w-[15rem] ${pos}`}>
+      <span role="status" aria-live="polite" title="Bấm để ẩn" onClick={(e) => { e.stopPropagation(); onClose(); }}
+        className="mm-bubble relative block cursor-pointer rounded-2xl border border-line bg-sheet px-3 py-2 text-left text-[13px] font-medium leading-snug text-ink shadow-lg">
+        {text}
+        <span className={`absolute -bottom-[7px] h-3 w-3 rotate-45 border-b border-r border-line bg-sheet ${tail}`} />
+      </span>
+    </span>
+  );
+}
 
 export default function Mascot({ collapsed }: { collapsed: boolean }) {
   const loc = useLocation();
@@ -31,8 +102,11 @@ export default function Mascot({ collapsed }: { collapsed: boolean }) {
   const [img, setImg] = useState<string | null>(mascotImage);
   const [open, setOpen] = useState(false);
   const [reduced, setReduced] = useState(false);
+  const [cheerOn, setCheerOn] = useState<boolean>(mascotCheer);
+  const btn = useRef<HTMLButtonElement>(null);
+  const [align, setAlign] = useState<"left" | "center" | "right">("center");
   useEffect(() => {
-    const h = () => { setMode(mascotMode()); setImg(mascotImage()); };
+    const h = () => { setMode(mascotMode()); setImg(mascotImage()); setCheerOn(mascotCheer()); };
     window.addEventListener(MASCOT_EVENT, h);
     const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     setReduced(!!mq?.matches);
@@ -44,6 +118,13 @@ export default function Mascot({ collapsed }: { collapsed: boolean }) {
     return () => window.removeEventListener("mm:notes", h);
   }, []);
 
+  const [cheer, closeCheer] = useCheer(cheerOn && mode !== "hidden" && !open);
+  useEffect(() => {
+    if (!cheer || !btn.current) return;
+    const r = btn.current.getBoundingClientRect();
+    setAlign(r.left < 140 ? "left" : window.innerWidth - r.right < 140 ? "right" : "center");
+  }, [cheer]);
+
   if (mode === "hidden") return open ? <><style>{CSS}</style><NotesPanel onClose={() => setOpen(false)} /></> : null;
   // Trong phiên học: đứng yên ở góc trái để không che ô trả lời.
   const inSession = /^\/(check|explore|s)\//.test(loc.pathname);
@@ -53,11 +134,12 @@ export default function Mascot({ collapsed }: { collapsed: boolean }) {
     <>
       <style>{CSS}</style>
       <div className="pointer-events-none fixed bottom-2 right-3 z-30 hidden sm:block" style={{ left: sidebarWidth + 12 }} aria-hidden={false}>
-        <div className={`relative h-[96px] ${walking ? "mm-track" : ""}`} style={{ width: walking ? undefined : "100%" }}>
-          <button onClick={() => setOpen((o) => !o)} title="Mở ghi chú" aria-label="Mở sổ ghi chú"
+        <div className={`relative h-[96px] ${walking ? "mm-track" : ""} ${cheer ? "mm-talking" : ""}`} style={{ width: walking ? undefined : "100%" }}>
+          <button ref={btn} onClick={() => setOpen((o) => !o)} title="Mở ghi chú" aria-label="Mở sổ ghi chú"
             className={`group pointer-events-auto absolute bottom-0 ${walking ? "mm-walker" : inSession ? "left-0" : "right-0"}`}
             style={{ width: SIZE, height: SIZE + 18 }}>
-            <span className="pointer-events-none absolute -top-7 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-[11px] font-medium text-paper shadow group-hover:block">Ghi chú nhanh ✎</span>
+            {cheer ? <Bubble text={cheer} onClose={closeCheer} align={align} />
+              : <span className="pointer-events-none absolute -top-7 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-[11px] font-medium text-paper shadow group-hover:block">Ghi chú nhanh ✎</span>}
             <span className={`block h-full w-full ${walking ? "mm-flip" : ""}`}>
               <span className={`block h-full w-full ${walking ? "mm-bob" : "mm-idle"}`}>
                 {img ? <img src={img} alt="" className="h-full w-full object-contain drop-shadow-md" draggable={false} /> : <Buddy walking={walking} />}
@@ -67,6 +149,11 @@ export default function Mascot({ collapsed }: { collapsed: boolean }) {
         </div>
       </div>
       {/* Điện thoại: nút nhỏ cố định góc phải dưới. */}
+      {cheer && (
+        <span className="fixed bottom-[4.5rem] right-3 z-30 sm:hidden">
+          <Bubble text={cheer} onClose={closeCheer} align="right" />
+        </span>
+      )}
       <button onClick={() => setOpen(true)} aria-label="Mở sổ ghi chú" className="fixed bottom-3 right-3 z-30 h-14 w-14 rounded-full bg-sheet shadow-lg ring-1 ring-line sm:hidden">
         {img ? <img src={img} alt="" className="h-full w-full rounded-full object-contain p-1" /> : <span className="block h-full w-full p-1"><Buddy walking={false} /></span>}
       </button>
@@ -102,9 +189,12 @@ const CSS = `
 .mm-ear-l { animation: mmEarL 3.2s ease-in-out infinite; }
 .mm-ear-r { animation: mmEarR 3.2s ease-in-out infinite; }
 .mm-walking .mm-ear-l, .mm-walking .mm-ear-r { animation-duration: 1s; }
+.mm-talking .mm-walker, .mm-talking .mm-flip, .mm-talking .mm-bob, .mm-talking .mm-leg { animation-play-state: paused; }
+@keyframes mmBubble { 0% { opacity: 0; transform: translateY(6px) scale(.9); } 60% { opacity: 1; transform: translateY(-2px) scale(1.02); } 100% { opacity: 1; transform: none; } }
+.mm-bubble { animation: mmBubble .35s ease-out both; }
 @keyframes mmPanelIn { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
 .mm-panel { animation: mmPanelIn .2s ease-out both; }
-@media (prefers-reduced-motion: reduce) { .mm-walker, .mm-flip, .mm-bob, .mm-idle, .mm-leg, .mm-eye, .mm-ear { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .mm-walker, .mm-flip, .mm-bob, .mm-idle, .mm-leg, .mm-eye, .mm-ear, .mm-bubble { animation: none !important; } }
 `;
 
 /** Nhân vật mặc định do MindMirror tự thiết kế: bé thỏ trắng "Mochi" cầm bút chì (SVG, tai ngoe nguẩy, chân bước). */
