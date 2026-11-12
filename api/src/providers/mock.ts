@@ -28,6 +28,7 @@ export class ScriptedProvider implements LLMProvider {
       const toolCalls = (next as any).tool_calls.map((c: any) => ({ name: String(c.name), args: c.args ?? {} }));
       return { text: "", toolCalls, rawModelParts: toolCalls.map((c: any) => ({ functionCall: c })), provider: this.provider, model: this.model, latencyMs: 1, usage };
     }
+    if (typeof next === "object" && next && (next as any).__truncated) return { text: String((next as any).text), truncated: true, provider: this.provider, model: this.model, latencyMs: 1, usage };
     const text = typeof next === "string" ? next : JSON.stringify(next);
     return { text, provider: this.provider, model: this.model, latencyMs: 1, usage };
   }
