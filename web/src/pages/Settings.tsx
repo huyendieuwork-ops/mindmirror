@@ -6,7 +6,7 @@ import { saveTheme, type Theme } from "../lib/theme";
 import { signOut } from "../lib/supabase";
 import type { UserInfo } from "../components/Layout";
 import { Avatar, Btn, Icon, Modal, PageHeader, Toggle, type IconName } from "../components/ui";
-import { mascotCheer, mascotImage, mascotMode, setMascot, type MascotMode } from "../components/Mascot";
+import { mascotCheer, mascotImage, mascotMode, prepareMascotImage, setMascot, type MascotMode } from "../components/Mascot";
 
 const DEFAULT: Settings = { aiStyle: "friendly", supportPreference: "socratic_first", challengeLevel: "balanced", selfAssessment: true };
 export interface NotifyPrefs { gaps: boolean; unfinished: boolean; weekly: boolean }
@@ -39,13 +39,21 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
   const [mMode, setMMode] = useState<MascotMode>(mascotMode);
   const [mImg, setMImg] = useState<string | null>(mascotImage);
   const [mCheer, setMCheer] = useState<boolean>(mascotCheer);
-  function pickMascotImage(f: File | undefined) {
+  const [mErr, setMErr] = useState<string | null>(null);
+  const [mBusy, setMBusy] = useState(false);
+  async function pickMascotImage(f: File | undefined) {
     if (!f) return;
-    if (!/^image\/(png|gif|webp|jpeg)$/.test(f.type)) { setError("Chọn ảnh PNG, GIF, WebP hoặc JPG."); return; }
-    if (f.size > 600 * 1024) { setError("Ảnh tối đa 600 KB (nên dùng PNG/GIF nền trong suốt)."); return; }
-    const r = new FileReader();
-    r.onload = () => { const url = String(r.result); try { setMascot({ img: url }); setMImg(url); setSaved("Đã đổi nhân vật"); } catch { setError("Trình duyệt không lưu được ảnh này. Thử ảnh nhỏ hơn."); } };
-    r.readAsDataURL(f);
+    setMErr(null);
+    if (f.type && !f.type.startsWith("image/")) { setMErr("Tệp này không phải ảnh. Hãy chọn ảnh PNG, GIF, WebP hoặc JPG."); return; }
+    if (f.size > 15 * 1024 * 1024) { setMErr("Ảnh quá lớn (tối đa 15 MB)."); return; }
+    setMBusy(true);
+    try {
+      const url = await prepareMascotImage(f);
+      if (!setMascot({ img: url })) { setMErr("Trình duyệt không lưu được ảnh (bộ nhớ đầy hoặc đang ở chế độ ẩn danh). Thử ảnh nhỏ hơn."); return; }
+      setMImg(url); setSaved("Đã đổi nhân vật");
+    } catch {
+      setMErr("Không đọc được ảnh này (ví dụ ảnh HEIC của iPhone). Hãy chọn ảnh PNG, GIF, WebP hoặc JPG.");
+    } finally { setMBusy(false); }
   }
 
   useEffect(() => { api.settings().then(setS).catch((e) => { setError(explain(e)); setS(DEFAULT); }); api.usage().then(setUsage).catch(() => {}); }, []);
@@ -165,14 +173,17 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
             <Row title="Lời động viên" desc="Thỉnh thoảng (khoảng 5–10 phút một lần) bé Mochi hiện một câu cổ vũ nhỏ. Bấm vào bong bóng để ẩn.">
               <Toggle label="Lời động viên" disabled={mMode === "hidden"} checked={mCheer} onChange={(x) => { setMCheer(x); setMascot({ cheer: x }); setSaved("Đã lưu thay đổi"); }} />
             </Row>
-            <Row title="Hình nhân vật" desc="Mặc định là bé thỏ Mochi của MindMirror. Bạn có thể dùng ảnh nhân vật riêng (PNG/GIF/WebP nền trong suốt, ≤ 600 KB, hướng mặt sang phải) mà bạn có quyền sử dụng — ảnh chỉ lưu trên trình duyệt này.">
-              <div className="flex flex-wrap items-center gap-2">
+            <Row title="Hình nhân vật" desc="Mặc định là bé thỏ Mochi của MindMirror. Bạn có thể dùng ảnh nhân vật riêng mà bạn có quyền sử dụng (nên là PNG/GIF/WebP nền trong suốt, hướng mặt sang phải; ảnh lớn sẽ được tự thu nhỏ). Ảnh chỉ lưu trên trình duyệt này.">
+              <div className="flex flex-col items-end gap-2 sm:max-w-[16rem]">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 {mImg && <img src={mImg} alt="Nhân vật hiện tại" className="h-10 w-10 rounded-lg border border-line object-contain" />}
                 <label className="cursor-pointer rounded-lg border border-line bg-sheet px-3 py-1.5 text-sm font-medium text-ink hover:border-mirror/60">
-                  Chọn ảnh…
-                  <input type="file" accept="image/png,image/gif,image/webp,image/jpeg" hidden onChange={(e) => { pickMascotImage(e.target.files?.[0]); e.target.value = ""; }} />
+                  {mBusy ? "Đang xử lý…" : "Chọn ảnh…"}
+                  <input type="file" accept="image/*" hidden disabled={mBusy} onChange={(e) => { pickMascotImage(e.target.files?.[0]); e.target.value = ""; }} />
                 </label>
-                {mImg && <button onClick={() => { setMascot({ img: null }); setMImg(null); setSaved("Đã dùng nhân vật mặc định"); }} className="rounded-lg px-3 py-1.5 text-sm text-muted hover:text-ink">Dùng mặc định</button>}
+                {mImg && <button onClick={() => { setMascot({ img: null }); setMImg(null); setMErr(null); setSaved("Đã dùng nhân vật mặc định"); }} className="rounded-lg px-3 py-1.5 text-sm text-muted hover:text-ink">Dùng mặc định</button>}
+              </div>
+                {mErr && <p role="alert" className="rounded-lg bg-rust/10 px-3 py-1.5 text-right text-xs text-rust">{mErr}</p>}
               </div>
             </Row>
             <Row title="Chế độ kỹ thuật (demo)" desc="Hiện tab “Agent đã làm gì” trong phiên học: các bước xử lý, công cụ, guardrail, token và chi phí ước tính.">
