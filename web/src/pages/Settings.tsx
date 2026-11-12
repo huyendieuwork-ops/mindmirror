@@ -6,7 +6,7 @@ import { saveTheme, type Theme } from "../lib/theme";
 import { signOut } from "../lib/supabase";
 import type { UserInfo } from "../components/Layout";
 import { Avatar, Btn, Icon, Modal, PageHeader, Toggle, type IconName } from "../components/ui";
-import { mascotImage, mascotMode, setMascot, type MascotMode } from "../components/Mascot";
+import { mascotCheer, mascotImage, mascotMode, setMascot, type MascotMode } from "../components/Mascot";
 
 const DEFAULT: Settings = { aiStyle: "friendly", supportPreference: "socratic_first", challengeLevel: "balanced", selfAssessment: true };
 export interface NotifyPrefs { gaps: boolean; unfinished: boolean; weekly: boolean }
@@ -38,6 +38,7 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
   const [section, setSection] = useState("account");
   const [mMode, setMMode] = useState<MascotMode>(mascotMode);
   const [mImg, setMImg] = useState<string | null>(mascotImage);
+  const [mCheer, setMCheer] = useState<boolean>(mascotCheer);
   function pickMascotImage(f: File | undefined) {
     if (!f) return;
     if (!/^image\/(png|gif|webp|jpeg)$/.test(f.type)) { setError("Chọn ảnh PNG, GIF, WebP hoặc JPG."); return; }
@@ -160,6 +161,9 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
             <Row title="Trợ lý ghi chú ở chân trang" desc="Nhân vật nhỏ ở chân trang — bấm vào để mở sổ ghi chú. Chọn đi dạo, đứng yên một chỗ hoặc ẩn (vẫn mở ghi chú được từ menu tài khoản).">
               <Segmented label="Trợ lý ghi chú" value={mMode} onChange={(m) => { setMMode(m); setMascot({ mode: m }); setSaved("Đã lưu thay đổi"); }}
                 options={[{ value: "walk", label: "Đi dạo" }, { value: "stand", label: "Đứng yên" }, { value: "hidden", label: "Ẩn" }]} />
+            </Row>
+            <Row title="Lời động viên" desc="Thỉnh thoảng (khoảng 5–10 phút một lần) bé Mochi hiện một câu cổ vũ nhỏ. Bấm vào bong bóng để ẩn.">
+              <Toggle label="Lời động viên" disabled={mMode === "hidden"} checked={mCheer} onChange={(x) => { setMCheer(x); setMascot({ cheer: x }); setSaved("Đã lưu thay đổi"); }} />
             </Row>
             <Row title="Hình nhân vật" desc="Mặc định là bé thỏ Mochi của MindMirror. Bạn có thể dùng ảnh nhân vật riêng (PNG/GIF/WebP nền trong suốt, ≤ 600 KB, hướng mặt sang phải) mà bạn có quyền sử dụng — ảnh chỉ lưu trên trình duyệt này.">
               <div className="flex flex-wrap items-center gap-2">
