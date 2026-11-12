@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Icon, type IconName } from "../components/ui";
+import { openOnboarding } from "../components/Onboarding";
 
 type CatId = "start" | "session" | "folders" | "progress" | "account" | "privacy";
 const CATS: { id: CatId; icon: IconName; tone: string; title: string; desc: string }[] = [
@@ -68,9 +69,10 @@ const ARTICLES: Article[] = [
     "Hỗ trợ PDF có lớp chữ (chọn và sao chép được chữ), slide PowerPoint (.pptx) và ghi chú .txt/.md; tối đa 400 trang mỗi tài liệu. Chữ được trích ngay trên trình duyệt của bạn.",
     "PDF dạng ảnh scan chưa đọc được. Hãy dùng bản PDF có thể chọn chữ, hoặc dán nội dung thành ghi chú.",
   ], true),
-  A("so-do", "folders", "Sơ đồ khái niệm và Lộ trình của thư mục", [
-    "Sơ đồ khái niệm: MindMirror đọc tài liệu (mỗi lần tối đa 6 trang, 10 lần mỗi ngày), rút ra các khái niệm và quan hệ “cần biết trước”. Mỗi quan hệ có câu trích nguyên văn trong tài liệu làm căn cứ.",
-    "Lộ trình: các khái niệm được sắp theo thứ tự nên học, kèm trạng thái lấy từ kết quả các phiên học (Đã nắm vững, Cần ôn lại, Chưa học) và nút Học từ đầu / Ôn lại / Tự kiểm tra cho từng bước.",
+  A("so-do", "folders", "Sơ đồ khái niệm và Lộ trình (có hoặc không có thư mục)", [
+    "Không bắt buộc tạo thư mục: vào Thư mục, chọn một thư mục hoặc mục “Tài liệu chưa xếp thư mục”, rồi mở tab Sơ đồ khái niệm hoặc Lộ trình.",
+    "Sơ đồ khái niệm: bấm “Tạo bản đồ khái niệm” — MindMirror đọc tài liệu (mỗi lần tới 40 trang, nút “Đọc hết” tự đọc tiếp), sắp các ý chính thành mind map từ chủ đề lớn tới ý con và ghi quan hệ “cần biết trước” kèm câu trích nguyên văn làm căn cứ. Bấm vào sơ đồ để xem toàn màn hình.",
+    "Lộ trình: các khái niệm được sắp theo thứ tự nên học, kèm trạng thái lấy từ kết quả các phiên học (Đã nắm vững, Cần ôn lại, Chưa học). Bấm “Xem lộ trình đầy đủ” để đi từng bước toàn màn hình, mỗi bước có nút Học từ đầu / Ôn lại / Tự kiểm tra.",
   ]),
   A("ket-noi", "folders", "Lấy tài liệu từ Google Drive, Notion", [
     "Vào Cài đặt → Dữ liệu & quyền riêng tư → Quản lý kết nối để thêm kết nối. MindMirror chỉ đọc tài liệu bạn chọn nhập, không sửa hay xoá gì trong tài khoản đó.",
@@ -136,6 +138,9 @@ export default function Help() {
             <button key={t} onClick={() => setQ(t)} className="rounded-full border border-line bg-sheet px-3 py-1 text-muted hover:border-mirror/50 hover:text-mirror">{t}</button>
           ))}
         </div>
+        <button onClick={openOnboarding} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-mirror px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-mirror/90">
+          <Icon name="compass" /> Xem hướng dẫn nhanh (1 phút)
+        </button>
       </section>
 
       {!searching && !cat && (
