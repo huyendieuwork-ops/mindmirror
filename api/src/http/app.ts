@@ -418,6 +418,43 @@ export function createApp(over: AppOverrides = {}) {
     return ok ? c.json({ deleted: true }) : c.json({ error: "not_found" }, 404);
   });
 
+  // ---- Ghi chú cá nhân (trợ lý ghi chú ở chân trang). Văn bản thuần, chỉ chủ tài khoản đọc/ghi. ----
+  const NoteBody = z.object({ title: z.string().max(120), body: z.string().max(20000) });
+  const MAX_NOTES = 200;
+  app.get("/api/notes", async (c) => {
+    const { store, userId } = c.var;
+    if (!store.listNotes) return c.json({ items: [] });
+    return c.json({ items: (await store.listNotes(userId)).map(publicNote) });
+  });
+  app.post("/api/notes", async (c) => {
+    const b = NoteBody.partial().safeParse(await c.req.json().catch(() => ({})));
+    if (!b.success) return c.json({ error: "invalid_body" }, 400);
+    const { store, userId } = c.var;
+    if (!store.saveNote || !store.listNotes) return c.json({ error: "not_supported" }, 501);
+    if ((await store.listNotes(userId)).length >= MAX_NOTES) return c.json({ error: "too_many_notes" }, 409);
+    const now = new Date().toISOString();
+    const n = { id: crypto.randomUUID(), userId, title: (b.data.title ?? "").trim(), body: b.data.body ?? "", createdAt: now, updatedAt: now };
+    await store.saveNote(n);
+    return c.json(publicNote(n), 201);
+  });
+  app.patch("/api/notes/:id", async (c) => {
+    const b = NoteBody.partial().safeParse(await c.req.json().catch(() => ({})));
+    if (!b.success) return c.json({ error: "invalid_body" }, 400);
+    const { store, userId } = c.var;
+    if (!store.saveNote || !store.listNotes) return c.json({ error: "not_supported" }, 501);
+    const n = (await store.listNotes(userId)).find((x) => x.id === c.req.param("id"));
+    if (!n) return c.json({ error: "not_found" }, 404);
+    const next = { ...n, title: b.data.title === undefined ? n.title : b.data.title.trim(), body: b.data.body ?? n.body, updatedAt: new Date().toISOString() };
+    await store.saveNote(next);
+    return c.json(publicNote(next));
+  });
+  app.delete("/api/notes/:id", async (c) => {
+    const { store, userId } = c.var;
+    if (!store.deleteNote) return c.json({ error: "not_supported" }, 501);
+    const ok = await store.deleteNote(userId, c.req.param("id"));
+    return ok ? c.json({ deleted: true }) : c.json({ error: "not_found" }, 404);
+  });
+
   /** Chuyển tài liệu vào thư mục (folder_id = null để bỏ khỏi thư mục). */
   app.patch("/api/documents/:id", async (c) => {
     const b = z.object({ folder_id: z.string().uuid().nullable() }).safeParse(await c.req.json().catch(() => ({})));
@@ -658,6 +695,10 @@ export function createApp(over: AppOverrides = {}) {
   });
 
   return app;
+}
+
+function publicNote(n: import("../store/types").NoteRecord) {
+  return { id: n.id, title: n.title, body: n.body, createdAt: n.createdAt, updatedAt: n.updatedAt };
 }
 
 /** Chỉ trả những gì frontend cần; không lộ state nội bộ thừa. */
