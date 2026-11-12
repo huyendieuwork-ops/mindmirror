@@ -133,7 +133,7 @@ export default function Login() {
             <a href="/privacy.html" className="underline decoration-line underline-offset-4 hover:text-ink">Chính sách quyền riêng tư</a>
           </div>
           <div className="mt-6 border-t border-line pt-5 text-center">
-            <p className="font-medium text-ink">Sản phẩm của nhóm sinh viên Trường Đại học Kinh tế Quốc dân</p>
+            <p className="font-medium text-ink">Sản phẩm của nhóm sinh viên Đại học Kinh tế Quốc dân</p>
             <ul className="mt-2 flex flex-wrap justify-center gap-x-2 gap-y-1">
               {TEAM.map((n, i) => <li key={n} className="whitespace-nowrap">{n}{i < TEAM.length - 1 && <span className="ml-2 text-line" aria-hidden>·</span>}</li>)}
             </ul>
