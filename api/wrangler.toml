@@ -45,7 +45,7 @@ WEB_CACHE_DAYS = "7"
 # Đợt 3 – bản đồ khái niệm (Neo4j Aura): cần secret NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD (thiếu → tính năng tắt).
 GRAPH_MAX_PAGES_PER_BUILD = "40"
 GRAPH_MAX_CALLS_PER_BUILD = "4"
-GRAPH_CHARS_PER_BATCH = "12000"
+GRAPH_CHARS_PER_BATCH = "6000"
 GRAPH_BUILDS_PER_DAY = "10"
 # RAG
 MODEL_EMBED = "gemini-embedding-001"
