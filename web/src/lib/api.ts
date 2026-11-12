@@ -58,7 +58,7 @@ export interface TraceRecord {
 
 // ---- Đợt 3: bản đồ khái niệm (GraphRAG) ----
 export type GraphRelType = "CAN_BIET_TRUOC" | "LIEN_QUAN";
-export interface GraphConcept { key: string; name: string; description: string; aliases: string[]; pages: (number | null)[]; documentIds: string[] }
+export interface GraphConcept { key: string; name: string; description: string; aliases: string[]; parent?: string | null; pages: (number | null)[]; documentIds: string[] }
 export interface GraphRel { from: string; to: string; fromName: string; toName: string; type: GraphRelType; evidence: { documentId: string; documentTitle: string; page: number | null; chunkId: string; quote: string } }
 export interface GraphViewData { concepts: GraphConcept[]; relations: GraphRel[]; documents: { id: string; title: string; extractedPages: number }[] }
 export interface GraphStatus { configured: boolean; connected: boolean; kind: string | null; error?: string; limits: { pagesPerBuild: number; buildsPerDay: number } }
