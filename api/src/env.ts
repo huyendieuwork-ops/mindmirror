@@ -56,8 +56,9 @@ export interface Env {
   NEO4J_USERNAME?: string;
   NEO4J_PASSWORD?: string;
   NEO4J_DATABASE?: string;            // mặc định "neo4j"
-  GRAPH_MAX_PAGES_PER_BUILD?: string; // mặc định 6 trang mỗi lần bấm
-  GRAPH_MAX_CALLS_PER_BUILD?: string; // mặc định 3 lần gọi Gemini mỗi lần bấm
+  GRAPH_MAX_PAGES_PER_BUILD?: string; // mặc định 40 trang mỗi lần bấm
+  GRAPH_MAX_CALLS_PER_BUILD?: string; // mặc định 4 lần gọi Gemini mỗi lần bấm
+  GRAPH_CHARS_PER_BATCH?: string;     // mặc định 12000 ký tự mỗi lô trích xuất
   GRAPH_BUILDS_PER_DAY?: string;      // mặc định 10 lần bấm mỗi người mỗi ngày
   // MCP
   CONNECTOR_ENC_KEY?: string;
