@@ -91,7 +91,7 @@ export class ModelRouter {
       const res = await p.generateJSON(p.supportsTools ? req : withoutTools(req), ctrl.signal);
       const cost = costUsd(res.model, res.usage.inputTokens, res.usage.outputTokens, this.opts.prices ?? DEFAULT_PRICES);
       span?.gen({ model: res.model, provider: res.provider, usage: { input: res.usage.inputTokens, output: res.usage.outputTokens }, costUsd: cost })
-        .set({ latency_ms: res.latencyMs });
+        .set({ latency_ms: res.latencyMs, ...(res.truncated ? { truncated: true } : {}) });
       this.opts.onCall?.({
         provider: res.provider, model: res.model, status: "ok", latencyMs: res.latencyMs,
         inputTokens: res.usage.inputTokens, outputTokens: res.usage.outputTokens, fallback: isFallback, costUsd: cost,
