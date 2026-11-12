@@ -47,6 +47,16 @@ export interface FolderRecord {
   createdAt: string;
 }
 
+/** Ghi chú cá nhân của người học (trợ lý ghi chú ở chân trang). */
+export interface NoteRecord {
+  id: string;
+  userId: string;
+  title: string;   // ≤ 120 ký tự
+  body: string;    // ≤ 20.000 ký tự, văn bản thuần (xuống dòng giữ nguyên)
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TraceRecord {
   traceId: string;
   userId: string | null;
@@ -92,6 +102,11 @@ export interface Store {
   saveFolder?(f: FolderRecord): Promise<void>;
   deleteFolder?(userId: string, id: string): Promise<boolean>;
   setDocumentFolder?(userId: string, documentId: string, folderId: string | null): Promise<boolean>;
+
+  // ---- Ghi chú (tuỳ chọn) ----
+  listNotes?(userId: string): Promise<NoteRecord[]>;
+  saveNote?(n: NoteRecord): Promise<void>;
+  deleteNote?(userId: string, id: string): Promise<boolean>;
   /** Lấy đúng các đoạn theo id (chỉ của userId) — dùng để luôn gửi kèm đoạn tài liệu gắn với tiêu chí đang chấm. */
   getChunks?(userId: string, ids: string[]): Promise<RetrievedChunk[]>;
   /** Mọi đoạn của MỘT tài liệu (chỉ của userId), theo thứ tự — dùng khi dựng đồ thị khái niệm. */
