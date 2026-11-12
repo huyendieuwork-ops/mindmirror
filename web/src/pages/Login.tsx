@@ -127,15 +127,25 @@ export default function Login() {
       </section>
 
       <footer className="border-t border-line bg-white/60">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-muted sm:flex-row sm:px-6">
-          <div className="flex items-center gap-2"><Logo size={24} /><Wordmark /></div>
-          <p>Bài tập lớn môn Agentic AI · © 2026</p>
-          <a href="/privacy.html" className="underline decoration-line underline-offset-4 hover:text-ink">Chính sách quyền riêng tư</a>
+        <div className="mx-auto max-w-6xl px-4 py-8 text-sm text-muted sm:px-6">
+          <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+            <div className="flex items-center gap-2"><Logo size={24} /><Wordmark /></div>
+            <a href="/privacy.html" className="underline decoration-line underline-offset-4 hover:text-ink">Chính sách quyền riêng tư</a>
+          </div>
+          <div className="mt-6 border-t border-line pt-5 text-center">
+            <p className="font-medium text-ink">Sản phẩm của nhóm sinh viên Trường Đại học Kinh tế Quốc dân</p>
+            <ul className="mt-2 flex flex-wrap justify-center gap-x-2 gap-y-1">
+              {TEAM.map((n, i) => <li key={n} className="whitespace-nowrap">{n}{i < TEAM.length - 1 && <span className="ml-2 text-line" aria-hidden>·</span>}</li>)}
+            </ul>
+            <p className="mt-3 text-xs">© 2026 MindMirror · Bài tập lớn môn Agentic AI · Sản phẩm học tập, phi thương mại</p>
+          </div>
         </div>
       </footer>
     </div>
   );
 }
+
+const TEAM = ["Hoàng Nhật Quỳnh", "Lê Như Ngọc Mai", "Đặng Thị Huyền Diệu", "Trần Thị Xuân Nhi", "Nguyễn Thị Nhân"];
 
 /* ---------------- Hero ---------------- */
 function HeroCard() {
