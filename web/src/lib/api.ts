@@ -40,6 +40,7 @@ export interface TurnResult {
 }
 export interface LibraryDoc { id: string; title: string; kind: string; pageCount: number; chunkCount: number; embedded: boolean; warnings: string[]; createdAt: string; origin: unknown; folderId?: string | null }
 export interface Folder { id: string; name: string; color: string; goal?: string | null; createdAt: string }
+export interface Note { id: string; title: string; body: string; createdAt: string; updatedAt: string }
 export interface Connector { id: string; name: string; preset: string; host: string; hasToken: boolean; tools: { search: string; fetch: string } }
 export interface Settings { aiStyle: "friendly" | "concise" | "academic"; supportPreference: "socratic_first" | "direct" | "flexible"; challengeLevel: "gentle" | "balanced" | "deep"; selfAssessment: boolean }
 export interface AppConfig { env: string; devAuth: boolean; model: string; embeddings: boolean; tracing: string[]; limits: { sessionsPerDay: number; turnsPerSession: number; inputChars: number } }
@@ -87,6 +88,7 @@ export function explain(e: unknown): string {
     connector_encryption_not_configured: "Máy chủ chưa đặt khoá mã hoá token (CONNECTOR_ENC_KEY).",
     folder_limit: "Đã đạt tối đa 50 thư mục.",
     folder_not_found: "Thư mục không còn tồn tại. Tải lại trang rồi thử lại.",
+    too_many_notes: "Bạn đã có 200 ghi chú — xoá bớt ghi chú cũ rồi tạo mới.",
     question_rejected: "Nội dung bạn gõ giống chỉ thị cho AI hoặc yêu cầu thông tin hệ thống. Hãy viết câu hỏi hoặc chủ đề bạn muốn học.",
     goal_rejected: "Mục tiêu học có nội dung giống chỉ thị cho AI hoặc yêu cầu thông tin hệ thống. Hãy viết mục tiêu học tập của bạn, ví dụ: “Ôn thi cuối kỳ chương 4–6”.",
     graph_not_configured: "Máy chủ chưa kết nối Neo4j nên chưa tạo được bản đồ khái niệm.",
@@ -133,6 +135,10 @@ export const api = {
   createFolder: (b: { name: string; color?: string; goal?: string | null }) => req<Folder>("POST", "/api/folders", b),
   updateFolder: (id: string, b: { name?: string; color?: string; goal?: string | null }) => req<Folder>("PATCH", `/api/folders/${id}`, b),
   deleteFolder: (id: string) => req("DELETE", `/api/folders/${id}`),
+  notes: () => req<{ items: Note[] }>("GET", "/api/notes"),
+  createNote: (b: { title?: string; body?: string }) => req<Note>("POST", "/api/notes", b),
+  updateNote: (id: string, b: { title?: string; body?: string }) => req<Note>("PATCH", `/api/notes/${id}`, b),
+  deleteNote: (id: string) => req("DELETE", `/api/notes/${id}`),
   connectors: () => req<{ items: Connector[] }>("GET", "/api/connectors"),
   addConnector: (b: { name: string; url: string; preset: string; token?: string }) => req<Connector>("POST", "/api/connectors", b),
   deleteConnector: (id: string) => req("DELETE", `/api/connectors/${id}`),
