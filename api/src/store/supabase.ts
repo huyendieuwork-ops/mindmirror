@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Chunk, Evidence, Gap, LibraryDocument, Message, MirrorCard, RetrievedChunk, Session, TurnResult, UserSettings } from "../agent/types";
-import type { ChunkQuery, ConnectorRecord, FolderRecord, SessionListItem, Store, TraceRecord, UsageEntry } from "./types";
+import type { ChunkQuery, ConnectorRecord, FolderRecord, NoteRecord, SessionListItem, Store, TraceRecord, UsageEntry } from "./types";
 import { searchText } from "../rag/text";
 import type { WebPassage } from "../web/search";
 
@@ -180,6 +180,7 @@ export class SupabaseStore implements Store {
       await this.db.from("graph_build_log").delete().eq("user_id", userId);
       await this.db.from("documents").delete().eq("user_id", userId); // cascade chunks
       await this.db.from("folders").delete().eq("user_id", userId);
+      await this.db.from("notes").delete().eq("user_id", userId);
       await this.db.from("connectors").delete().eq("user_id", userId);
       await this.db.from("agent_traces").delete().eq("user_id", userId);
     }
@@ -293,6 +294,20 @@ export class SupabaseStore implements Store {
   async saveFolder(f: FolderRecord) {
     const { error } = await this.db.from("folders").upsert({ id: f.id, user_id: f.userId, name: f.name, color: f.color, goal: f.goal ?? null, created_at: f.createdAt });
     if (error) throw asError(error);
+  }
+  async listNotes(userId: string): Promise<NoteRecord[]> {
+    const { data, error } = await this.db.from("notes").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(200);
+    if (error) throw asError(error);
+    return (data ?? []).map((r: any) => ({ id: r.id, userId: r.user_id, title: r.title ?? "", body: r.body ?? "", createdAt: r.created_at, updatedAt: r.updated_at }));
+  }
+  async saveNote(n: NoteRecord) {
+    const { error } = await this.db.from("notes").upsert({ id: n.id, user_id: n.userId, title: n.title, body: n.body, created_at: n.createdAt, updated_at: n.updatedAt });
+    if (error) throw asError(error);
+  }
+  async deleteNote(userId: string, id: string) {
+    const { data, error } = await this.db.from("notes").delete().eq("user_id", userId).eq("id", id).select("id");
+    if (error) throw asError(error);
+    return (data ?? []).length > 0;
   }
   async deleteFolder(userId: string, id: string) {
     const { data, error } = await this.db.from("folders").delete().eq("user_id", userId).eq("id", id).select("id");
