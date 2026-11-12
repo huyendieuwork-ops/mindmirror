@@ -126,6 +126,8 @@ export const api = {
   finish: (id: string) => req<TurnResult>("POST", `/api/sessions/${id}/finish`, { client_turn_id: `finish-${id}` }),
   pause: (id: string) => req<{ status: string }>("POST", `/api/sessions/${id}/pause`, {}),
   assessment: (id: string) => req<Assessment>("GET", `/api/sessions/${id}/assessment`),
+  /** Chi tiết + thẻ đánh giá của tối đa 40 phiên trong một yêu cầu (không kèm tin nhắn). */
+  sessionSummaries: (ids: string[]) => req<{ items: { id: string; view: SessionView; assessment: Assessment }[] }>("GET", `/api/sessions/summaries?ids=${ids.join(",")}`),
   traces: (id: string) => req<{ items: TraceRecord[] }>("GET", `/api/sessions/${id}/traces`),
   documents: () => req<{ items: LibraryDoc[] }>("GET", "/api/documents"),
   uploadDocument: (b: { title: string; kind: string; pages: { page: number | null; text: string }[] }) => req<{ document: LibraryDoc; duplicate: boolean }>("POST", "/api/documents", b),

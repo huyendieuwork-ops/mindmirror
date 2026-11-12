@@ -31,26 +31,33 @@ export class SupabaseStore implements Store {
       this.db.from("evidence").select("*").eq("session_id", id).eq("user_id", userId).order("created_at", { ascending: true }),
     ]);
     for (const r of [msgs, gaps, ev]) if (r.error) throw asError(r.error);
-    return {
-      id: row.id,
-      userId: row.user_id,
-      status: row.status,
-      state: row.state,
-      settings: row.settings,
-      documentIds: row.document_ids ?? [],
-      rubric: row.rubric ?? [],
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      messages: (msgs.data ?? []).map((m: any): Message => ({
-        id: m.id, role: m.role, text: m.text, action: m.action, intent: m.intent, citations: m.citations ?? [], webCitations: m.web_citations ?? [], createdAt: m.created_at,
-      })),
-      gaps: (gaps.data ?? []).map((g: any): Gap => ({ id: g.id, concept: g.concept, status: g.status, supportLevel: g.support_level })),
-      evidence: (ev.data ?? []).map((e: any): Evidence => ({
-        id: e.id, messageId: e.message_id, criterion: e.criterion, claim: e.claim, quote: e.quote, status: e.status,
-        assisted: e.assisted, supportLevelAtTime: e.support_level_at_time,
-        criterionId: e.criterion_id ?? null, sourceCitation: e.source_citation ?? null, context: e.context ?? "other", createdAt: e.created_at,
-      })),
+    return toSession(row, msgs.data ?? [], gaps.data ?? [], ev.data ?? []);
+  }
+
+  /** Trang Tiến độ: đọc tối đa vài chục phiên bằng 4 truy vấn (thay vì 4–5 truy vấn mỗi phiên); không đọc tin nhắn. */
+  async getSessionSummaries(ids: string[], userId: string) {
+    if (!ids.length) return [];
+    const { data: rows, error } = await this.db.from("learning_sessions").select("*").in("id", ids).eq("user_id", userId);
+    if (error) throw asError(error);
+    const own = (rows ?? []).map((r: any) => r.id as string);
+    if (!own.length) return [];
+    const [gaps, ev, cards] = await Promise.all([
+      this.db.from("knowledge_gaps").select("*").in("session_id", own).eq("user_id", userId),
+      this.db.from("evidence").select("*").in("session_id", own).eq("user_id", userId).order("created_at", { ascending: true }),
+      this.db.from("session_cards").select("session_id, card_json").in("session_id", own).eq("user_id", userId),
+    ]);
+    for (const r of [gaps, ev, cards]) if (r.error) throw asError(r.error);
+    const by = <T extends { session_id: string }>(xs: T[]) => {
+      const m = new Map<string, T[]>();
+      for (const x of xs) { const l = m.get(x.session_id); if (l) l.push(x); else m.set(x.session_id, [x]); }
+      return m;
     };
+    const g = by((gaps.data ?? []) as any[]), e = by((ev.data ?? []) as any[]);
+    const c = new Map(((cards.data ?? []) as any[]).map((x) => [x.session_id as string, x.card_json as MirrorCard]));
+    return (rows ?? []).map((row: any) => {
+      const session = toSession(row, [], g.get(row.id) ?? [], e.get(row.id) ?? []);
+      return { session, card: session.status === "finished" ? c.get(row.id) ?? null : null };
+    });
   }
 
   async listSessions(userId: string, limit: number): Promise<SessionListItem[]> {
@@ -372,4 +379,27 @@ function asError(e: unknown): Error {
   const err = new Error(o.message || "database_error");
   (err as Error & { code?: string }).code = o.code;
   return err;
+}
+
+function toSession(row: any, msgs: any[], gaps: any[], ev: any[]): Session {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    status: row.status,
+    state: row.state,
+    settings: row.settings,
+    documentIds: row.document_ids ?? [],
+    rubric: row.rubric ?? [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    messages: msgs.map((m: any): Message => ({
+      id: m.id, role: m.role, text: m.text, action: m.action, intent: m.intent, citations: m.citations ?? [], webCitations: m.web_citations ?? [], createdAt: m.created_at,
+    })),
+    gaps: gaps.map((g: any): Gap => ({ id: g.id, concept: g.concept, status: g.status, supportLevel: g.support_level })),
+    evidence: ev.map((e: any): Evidence => ({
+      id: e.id, messageId: e.message_id, criterion: e.criterion, claim: e.claim, quote: e.quote, status: e.status,
+      assisted: e.assisted, supportLevelAtTime: e.support_level_at_time,
+      criterionId: e.criterion_id ?? null, sourceCitation: e.source_citation ?? null, context: e.context ?? "other", createdAt: e.created_at,
+    })),
+  };
 }

@@ -50,6 +50,13 @@ export class MemoryStore implements Store {
   async getCard(sessionId: string, userId: string) {
     return this.sessions.get(sessionId)?.userId === userId ? this.cards.get(sessionId) ?? null : null;
   }
+  async getSessionSummaries(ids: string[], userId: string) {
+    return ids.flatMap((id) => {
+      const s = this.sessions.get(id);
+      if (!s || s.userId !== userId) return [];
+      return [{ session: { ...structuredClone(s), messages: [] }, card: s.status === "finished" ? this.cards.get(id) ?? null : null }];
+    });
+  }
   async getTurnResult(sessionId: string, clientTurnId: string) { return this.turns.get(`${sessionId}:${clientTurnId}`) ?? null; }
   async saveTurnResult(sessionId: string, clientTurnId: string, r: TurnResult) { this.turns.set(`${sessionId}:${clientTurnId}`, r); }
   async countSessionsSince(userId: string, sinceIso: string) {

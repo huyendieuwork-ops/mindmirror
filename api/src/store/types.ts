@@ -82,6 +82,8 @@ export interface Store {
   saveSession(s: Session): Promise<void>;
   saveCard(sessionId: string, userId: string, card: MirrorCard): Promise<void>;
   getCard(sessionId: string, userId: string): Promise<MirrorCard | null>;
+  /** Đọc nhiều phiên một lượt cho trang Tiến độ (không kèm tin nhắn để nhẹ). Bỏ qua id không thuộc userId. */
+  getSessionSummaries?(ids: string[], userId: string): Promise<{ session: Session; card: MirrorCard | null }[]>;
   getTurnResult(sessionId: string, clientTurnId: string): Promise<TurnResult | null>;
   saveTurnResult(sessionId: string, clientTurnId: string, r: TurnResult): Promise<void>;
   countSessionsSince(userId: string, sinceIso: string): Promise<number>;

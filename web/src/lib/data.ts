@@ -25,32 +25,66 @@ export const ASK_PLACEHOLDER: Record<Mode, string> = {
 };
 
 /* ---------- bộ nhớ đệm dùng chung giữa các trang (30 giây) ---------- */
-let cache: { at: number; sessions: SessionItem[]; docs: LibraryDoc[]; folders: Folder[] } | null = null;
+type Base = { at: number; sessions: SessionItem[]; docs: LibraryDoc[]; folders: Folder[] };
+let cache: Base | null = null;
 const detailCache = new Map<string, { at: string; d: SessionDetail }>();
 const listeners = new Set<() => void>();
 export function invalidate() { cache = null; listeners.forEach((l) => l()); }
 
-async function loadBase(force = false) {
+let baseInflight: Promise<Base> | null = null;
+async function loadBase(force = false): Promise<Base> {
   if (!force && cache && Date.now() - cache.at < 30_000) return cache;
-  const [s, d, f] = await Promise.all([
-    api.listSessions().catch(() => ({ items: [] })),
-    api.documents().catch(() => ({ items: [] })),
-    api.folders().catch(() => ({ items: [] })),
-  ]);
-  cache = { at: Date.now(), sessions: s.items as SessionItem[], docs: d.items, folders: f.items };
-  return cache;
+  // Nhiều thành phần mở cùng lúc (menu, thông báo, trang) → dùng chung một lượt tải.
+  if (baseInflight) return baseInflight;
+  baseInflight = (async () => {
+    const [s, d, f] = await Promise.all([
+      api.listSessions().catch(() => ({ items: [] })),
+      api.documents().catch(() => ({ items: [] })),
+      api.folders().catch(() => ({ items: [] })),
+    ]);
+    const next: Base = { at: Date.now(), sessions: s.items as SessionItem[], docs: d.items, folders: f.items };
+    cache = next;
+    return next;
+  })();
+  try { return await baseInflight; } finally { baseInflight = null; }
 }
 
 async function loadDetail(item: SessionItem): Promise<SessionDetail> {
-  const hit = detailCache.get(item.id);
-  if (hit && hit.at === item.updatedAt) return hit.d;
   const [view, assessment] = await Promise.all([
     api.getSession(item.id).catch(() => null),
     api.assessment(item.id).catch(() => null),
   ]);
-  const d = { item, view, assessment };
-  detailCache.set(item.id, { at: item.updatedAt, d });
-  return d;
+  return { item, view, assessment };
+}
+
+/** Chi tiết nhiều phiên: chỉ tải phiên chưa có trong bộ đệm (hoặc đã đổi), gộp thành MỘT yêu cầu mỗi 40 phiên. */
+let inflight: Promise<void> | null = null;
+async function loadDetails(items: SessionItem[]): Promise<SessionDetail[]> {
+  if (inflight) await inflight.catch(() => {}); // nhiều thành phần cùng gọi (thanh thông báo + trang) → không tải trùng
+  const missing = items.filter((it) => detailCache.get(it.id)?.at !== it.updatedAt);
+  if (missing.length) {
+    inflight = (async () => {
+      for (let i = 0; i < missing.length; i += 40) {
+        const part = missing.slice(i, i + 40);
+        try {
+          const r = await api.sessionSummaries(part.map((x) => x.id));
+          const got = new Map(r.items.map((x) => [x.id, x]));
+          for (const it of part) {
+            const x = got.get(it.id);
+            detailCache.set(it.id, { at: it.updatedAt, d: { item: it, view: x?.view ?? null, assessment: x?.assessment ?? null } });
+          }
+        } catch {
+          // Máy chủ cũ chưa có /summaries hoặc lỗi mạng: quay về cách tải từng phiên.
+          for (const d of await Promise.all(part.map(loadDetail))) detailCache.set(d.item.id, { at: d.item.updatedAt, d });
+        }
+      }
+    })();
+    try { await inflight; } finally { inflight = null; }
+  }
+  return items.map((it) => {
+    const d = detailCache.get(it.id)?.d;
+    return d ? { ...d, item: it } : { item: it, view: null, assessment: null };
+  });
 }
 
 /** Dữ liệu học tập thật của người dùng: phiên, tài liệu, thư mục và (tuỳ chọn) chi tiết các phiên gần nhất. */
@@ -64,7 +98,7 @@ export function useLearningData(opts: { details?: number } = {}) {
       const b = await loadBase(force);
       setState((s) => ({ ...s, sessions: b.sessions, docs: b.docs, folders: b.folders, loading: want > 0, error: false }));
       if (want > 0) {
-        const details = await Promise.all(b.sessions.slice(0, want).map(loadDetail));
+        const details = await loadDetails(b.sessions.slice(0, want));
         setState((s) => ({ ...s, details, loading: false }));
       }
     } catch {

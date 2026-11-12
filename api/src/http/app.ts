@@ -39,6 +39,8 @@ export interface AppOverrides {
 }
 
 // Khoá dev cố định — CHỈ dùng khi APP_ENV=development và chưa đặt CONNECTOR_ENC_KEY.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const DEV_ENC_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
 
 const devMemory = new MemoryStore(); // chỉ dùng khi chưa cấu hình Supabase (dev)
@@ -257,6 +259,23 @@ export function createApp(over: AppOverrides = {}) {
   app.get("/api/sessions", async (c) => {
     const { userId, store } = c.var;
     return c.json({ items: await store.listSessions(userId, 30) });
+  });
+
+  // Trang Tiến độ: chi tiết + thẻ đánh giá của nhiều phiên trong MỘT yêu cầu (thay cho 2 yêu cầu mỗi phiên).
+  // Đặt trước "/api/sessions/:id" để không bị khớp nhầm. Không trả tin nhắn (trang Tiến độ không cần).
+  app.get("/api/sessions/summaries", async (c) => {
+    const { userId, store } = c.var;
+    const raw = (c.req.query("ids") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    const ids = [...new Set(raw)].filter((x) => UUID_RE.test(x)).slice(0, 40);
+    if (!ids.length) return c.json({ items: [] });
+    const rows = store.getSessionSummaries
+      ? await store.getSessionSummaries(ids, userId)
+      : (await Promise.all(ids.map(async (id) => {
+          const session = await store.getSession(id, userId);
+          if (!session) return null;
+          return { session: { ...session, messages: [] }, card: session.status === "finished" ? await store.getCard(id, userId) : null };
+        }))).filter((x): x is NonNullable<typeof x> => !!x);
+    return c.json({ items: rows.map(({ session, card }) => ({ id: session.id, view: { ...publicSession(session), card }, assessment: assessLearner(session) })) });
   });
 
   app.get("/api/sessions/:id", async (c) => {
