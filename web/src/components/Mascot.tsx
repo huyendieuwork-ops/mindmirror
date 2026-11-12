@@ -90,44 +90,61 @@ const CSS = `
 @keyframes mmLegA { 0%, 100% { transform: rotate(18deg); } 50% { transform: rotate(-18deg); } }
 @keyframes mmLegB { 0%, 100% { transform: rotate(-18deg); } 50% { transform: rotate(18deg); } }
 .mm-leg { transform-box: fill-box; transform-origin: 50% 0; }
-.mm-walking .mm-leg-a { animation: mmLegA .5s ease-in-out infinite; }
-.mm-walking .mm-leg-b { animation: mmLegB .5s ease-in-out infinite; }
-@keyframes mmBlink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes mmHopA { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
+@keyframes mmHopB { 0%, 100% { transform: translateY(-2.5px); } 50% { transform: translateY(0); } }
+.mm-walking .mm-leg-a { animation: mmHopA .5s ease-in-out infinite; }
+.mm-walking .mm-leg-b { animation: mmHopB .5s ease-in-out infinite; }
+@keyframes mmBlink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.2); } }
 .mm-eye { transform-box: fill-box; transform-origin: center; animation: mmBlink 4s infinite; }
+@keyframes mmEarL { 0%, 70%, 100% { transform: rotate(0); } 80% { transform: rotate(-10deg); } 90% { transform: rotate(4deg); } }
+@keyframes mmEarR { 0%, 70%, 100% { transform: rotate(0); } 82% { transform: rotate(10deg); } 92% { transform: rotate(-4deg); } }
+.mm-ear { transform-box: fill-box; transform-origin: 50% 100%; }
+.mm-ear-l { animation: mmEarL 3.2s ease-in-out infinite; }
+.mm-ear-r { animation: mmEarR 3.2s ease-in-out infinite; }
+.mm-walking .mm-ear-l, .mm-walking .mm-ear-r { animation-duration: 1s; }
 @keyframes mmPanelIn { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
 .mm-panel { animation: mmPanelIn .2s ease-out both; }
-@media (prefers-reduced-motion: reduce) { .mm-walker, .mm-flip, .mm-bob, .mm-idle, .mm-leg, .mm-eye { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .mm-walker, .mm-flip, .mm-bob, .mm-idle, .mm-leg, .mm-eye, .mm-ear { animation: none !important; } }
 `;
 
-/** Nhân vật mặc định do MindMirror tự thiết kế: "Mochi" — một bé tròn xanh, cầm bút chì. */
+/** Nhân vật mặc định do MindMirror tự thiết kế: bé thỏ trắng "Mochi" cầm bút chì (SVG, tai ngoe nguẩy, chân bước). */
 function Buddy({ walking }: { walking: boolean }) {
+  const line = "#8a6f74";
   return (
     <svg viewBox="0 0 80 96" className={`h-full w-full drop-shadow-md ${walking ? "mm-walking" : ""}`} aria-hidden>
-      <ellipse cx="40" cy="92" rx="20" ry="3.5" fill="#1f2a44" opacity=".12" />
-      <g fill="#3f6fb8">
-        <rect className="mm-leg mm-leg-a" x="27" y="72" width="9" height="16" rx="4.5" />
-        <rect className="mm-leg mm-leg-b" x="44" y="72" width="9" height="16" rx="4.5" />
+      <ellipse cx="40" cy="92" rx="22" ry="3.5" fill="#1f2a44" opacity=".12" />
+      <g stroke={line} strokeWidth="2" strokeLinejoin="round">
+        <g className="mm-ear mm-ear-l">
+          <path d="M27 38C19 26 17 8 24 4c7-3 10 14 10 30z" fill="#fff" />
+          <path d="M27 33c-5-9-6-22-2-24 4-1 6 11 6 22z" fill="#f9c1cd" stroke="none" />
+        </g>
+        <g className="mm-ear mm-ear-r">
+          <path d="M53 38c8-12 10-30 3-34-7-3-10 14-10 30z" fill="#fff" />
+          <path d="M53 33c5-9 6-22 2-24-4-1-6 11-6 22z" fill="#f9c1cd" stroke="none" />
+        </g>
+        <ellipse className="mm-leg mm-leg-a" cx="31" cy="86" rx="7" ry="4.5" fill="#fff" />
+        <ellipse className="mm-leg mm-leg-b" cx="49" cy="86" rx="7" ry="4.5" fill="#fff" />
+        <path d="M40 30C22 30 13 42 13 57c0 18 12 30 27 30s27-12 27-30c0-15-9-27-27-27z" fill="#fff" />
       </g>
-      <path d="M40 10c-17 0-29 13-29 31v16c0 11 9 19 20 19h18c11 0 20-8 20-19V41c0-18-12-31-29-31z" fill="#7db6f7" />
-      <path d="M40 10c-17 0-29 13-29 31v4c4-15 15-25 29-25s25 10 29 25v-4c0-18-12-31-29-31z" fill="#a9d0fb" />
-      <path d="M40 12c2-6 8-9 13-8-2 5-7 8-13 8z" fill="#5fc28f" />
-      <path d="M40 12c-1-5-5-8-9-8 1 4 5 7 9 8z" fill="#7fd7a6" />
-      <g fill="#1f2a44">
-        <ellipse className="mm-eye" cx="31" cy="44" rx="3.6" ry="4.4" />
-        <ellipse className="mm-eye" cx="49" cy="44" rx="3.6" ry="4.4" />
+      <ellipse cx="40" cy="71" rx="15" ry="11" fill="#fdf1f4" />
+      <g stroke="#5b4a4f" strokeWidth="2.2" fill="none" strokeLinecap="round">
+        <path className="mm-eye" d="M28 52q4-4 8 0" />
+        <path className="mm-eye" d="M44 52q4-4 8 0" />
       </g>
-      <circle cx="32.3" cy="42.4" r="1.2" fill="#fff" />
-      <circle cx="50.3" cy="42.4" r="1.2" fill="#fff" />
-      <ellipse cx="25" cy="53" rx="4.5" ry="2.6" fill="#f7a8b8" opacity=".8" />
-      <ellipse cx="55" cy="53" rx="4.5" ry="2.6" fill="#f7a8b8" opacity=".8" />
-      <path d="M35 53c2 3 8 3 10 0" stroke="#1f2a44" strokeWidth="2" fill="none" strokeLinecap="round" />
-      <g transform="rotate(-28 62 58)">
-        <rect x="58" y="44" width="6" height="24" rx="1.5" fill="#ffcf5a" />
-        <path d="M58 68h6l-3 6z" fill="#f2c9a0" />
-        <path d="M60.2 72.4h1.6l-.8 1.6z" fill="#1f2a44" />
-        <rect x="58" y="44" width="6" height="4" rx="1.5" fill="#f28b9b" />
+      <ellipse cx="25" cy="59" rx="5" ry="3" fill="#f7a8b8" opacity=".85" />
+      <ellipse cx="55" cy="59" rx="5" ry="3" fill="#f7a8b8" opacity=".85" />
+      <path d="M38.2 57h3.6L40 59.2z" fill="#e88a9c" />
+      <path d="M37 60.5q1.5 2 3 0 1.5 2 3 0" stroke="#5b4a4f" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+      <g transform="rotate(-24 57 70)">
+        <rect x="54" y="58" width="5.5" height="20" rx="1.4" fill="#ffd36b" />
+        <path d="M54 78h5.5l-2.75 5z" fill="#f2c9a0" />
+        <path d="M56 81.6h1.5l-.75 1.4z" fill="#5b4a4f" />
+        <rect x="54" y="58" width="5.5" height="3.6" rx="1.4" fill="#f28b9b" />
       </g>
-      <ellipse cx="63" cy="62" rx="5" ry="4.2" fill="#7db6f7" />
+      <g fill="#f6dfe5">
+        <ellipse cx="31" cy="70" rx="4.2" ry="3.4" />
+        <ellipse cx="51" cy="70" rx="4.2" ry="3.4" />
+      </g>
     </svg>
   );
 }
