@@ -5,7 +5,7 @@ export class MemoryGraphStore implements GraphStore {
   readonly kind = "memory";
   concepts = new Map<string, ConceptNode & { userId: string }>();           // userId|key
   documents = new Map<string, { userId: string; id: string; title: string }>(); // userId|id
-  pages = new Map<string, { userId: string; documentId: string; page: number | null }>(); // userId|pageKey
+  pages = new Map<string, { userId: string; documentId: string; page: number | null; v?: number }>(); // userId|pageKey
   relations: (GraphRelation & { userId: string })[] = [];
   mentions: { userId: string; concept: string; pageKey: string; chunkId: string; quote: string }[] = [];
 
@@ -19,7 +19,7 @@ export class MemoryGraphStore implements GraphStore {
     for (const c of w.concepts) {
       const k = `${u}|${c.key}`;
       const old = this.concepts.get(k);
-      this.concepts.set(k, old ? { ...old, description: old.description || c.description, aliases: [...new Set([...old.aliases, ...c.aliases])] } : { userId: u, ...c });
+      this.concepts.set(k, old ? { ...old, description: old.description || c.description, aliases: [...new Set([...old.aliases, ...c.aliases])], parent: old.parent ?? c.parent ?? null } : { userId: u, ...c });
     }
     for (const m of w.mentions) {
       const pk = pageKey(m.evidence.documentId, m.evidence.page);
@@ -33,8 +33,8 @@ export class MemoryGraphStore implements GraphStore {
     }
   }
 
-  async extractedPages(userId: string, documentIds: string[]) {
-    return new Set([...this.pages.values()].filter((p) => p.userId === userId && documentIds.includes(p.documentId)).map((p) => pageKey(p.documentId, p.page)));
+  async extractedPages(userId: string, documentIds: string[], minVersion = 0) {
+    return new Set([...this.pages.values()].filter((p) => p.userId === userId && documentIds.includes(p.documentId) && (p.v ?? 1) >= minVersion).map((p) => pageKey(p.documentId, p.page)));
   }
 
   private name(userId: string, key: string) { return this.concepts.get(`${userId}|${key}`)?.name ?? key; }
@@ -57,7 +57,7 @@ export class MemoryGraphStore implements GraphStore {
     return { seeds, relations };
   }
 
-  async view(userId: string, documentIds: string[], limit = 60): Promise<GraphView> {
+  async view(userId: string, documentIds: string[], limit = 150, minVersion = 0): Promise<GraphView> {
     const inDocs = (docId: string) => !documentIds.length || documentIds.includes(docId);
     const mentions = this.mentions.filter((m) => m.userId === userId && inDocs(m.pageKey.split(":")[0]!));
     const relations = this.relations.filter((r) => r.userId === userId && inDocs(r.evidence.documentId));
@@ -66,7 +66,7 @@ export class MemoryGraphStore implements GraphStore {
       const c = this.concepts.get(`${userId}|${k}`)!;
       const ms = mentions.filter((m) => m.concept === k);
       return {
-        key: c.key, name: c.name, description: c.description, aliases: c.aliases,
+        key: c.key, name: c.name, description: c.description, aliases: c.aliases, parent: c.parent ?? null,
         pages: [...new Set(ms.map((m) => this.pages.get(`${userId}|${m.pageKey}`)?.page ?? null))],
         documentIds: [...new Set(ms.map((m) => m.pageKey.split(":")[0]!))],
       };
@@ -76,7 +76,7 @@ export class MemoryGraphStore implements GraphStore {
     return {
       concepts,
       relations: relations.filter((r) => shown.has(r.from) && shown.has(r.to)).map(({ userId: _u, ...r }) => ({ ...r, fromName: this.name(userId, r.from), toName: this.name(userId, r.to) })),
-      documents: docs.map((d) => ({ id: d.id, title: d.title, extractedPages: [...this.pages.values()].filter((p) => p.userId === userId && p.documentId === d.id).length })),
+      documents: docs.map((d) => ({ id: d.id, title: d.title, extractedPages: [...this.pages.values()].filter((p) => p.userId === userId && p.documentId === d.id && (p.v ?? 1) >= minVersion).length })),
     };
   }
 
