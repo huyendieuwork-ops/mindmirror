@@ -18,7 +18,7 @@ Vào repo → **Settings → Secrets and variables → Actions**:
 | Secret | `SUPABASE_SERVICE_ROLE_KEY` | Secret key | Để bật đăng nhập Google |
 | Secret | `SUPABASE_DB_URL` | Nút Connect → Session pooler (điền mật khẩu DB) | Để tự tạo bảng |
 | Secret | `GEMINI_API_KEY` | aistudio.google.com | Để có AI thật |
-| Secret | `GROQ_API_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | console.groq.com, cloud.langfuse.com | Không |
+| Secret | `GROQ_API_KEY`, `MISTRAL_API_KEY`, `CEREBRAS_API_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` | console.groq.com, console.mistral.ai, cloud.cerebras.ai, cloud.langfuse.com | Không |
 
 Chế độ tự chọn theo những gì đã khai báo:
 - **demo** (chỉ có Cloudflare): web công khai chạy ngay, mỗi trình duyệt một mã người dùng ngẫu nhiên, AI là bản mẫu; dữ liệu lưu tạm trong bộ nhớ Worker.
@@ -159,7 +159,7 @@ supabase/migrations/0001_init.sql, 0002_rag_mcp_obs.sql
    Bằng chứng sau khi đã nhận hỗ trợ được gắn `assisted` (thẻ cuối phân biệt "tự làm" và "sau gợi ý").
 5. **Lưu**: chỉ lưu khi thành công; model lỗi → 503 `retryable`, client gửi lại cùng `client_turn_id` (idempotent).
 
-Fallback: 429 có Retry‑After ngắn → chờ 1 lần; dài → Groq. 5xx/timeout → retry 1 lần có jitter → Groq. 401/403 → báo lỗi, không fallback.
+Fallback: 429 có Retry‑After ngắn → chờ 1 lần; dài → chuỗi dự phòng. 5xx/timeout → retry có jitter → chuỗi dự phòng. 401/403 → báo lỗi, không fallback. Chuỗi dự phòng gồm các nhà có khoá, theo `FALLBACK_ORDER` (mặc định `mistral,cerebras,groq`), mỗi nhà thử 1 lần; `/api/config` → `fallbacks` cho biết nhà nào đang bật.
 
 ## API
 

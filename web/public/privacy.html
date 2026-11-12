@@ -62,7 +62,7 @@ footer{margin-top:28px;text-align:center;color:var(--muted);font-size:.88rem}
   <ul>
     <li>Chỉ thu thập những gì cần để học: thông tin đăng nhập Google cơ bản, phiên học, tài liệu <b>bạn chủ động tải lên</b>, cài đặt.</li>
     <li>Tệp gốc (PDF, slide) <b>không được tải lên máy chủ</b>: chữ được trích ngay trên trình duyệt, máy chủ chỉ lưu phần chữ.</li>
-    <li>Nội dung cần thiết của mỗi lượt học được gửi tới mô hình AI (Google Gemini, dự phòng Groq) để tạo câu trả lời.</li>
+    <li>Nội dung cần thiết của mỗi lượt học được gửi tới mô hình AI (Google Gemini; khi Gemini quá tải thì một mô hình dự phòng: Mistral, Cerebras hoặc Groq) để tạo câu trả lời.</li>
     <li><span class="ok">Không bán dữ liệu, không quảng cáo, không dùng để chấm điểm học tập chính thức.</span></li>
     <li>Bạn tự tải về hoặc xoá dữ liệu của mình bất cứ lúc nào trong <b>Cài đặt</b>.</li>
   </ul>
@@ -144,12 +144,12 @@ footer{margin-top:28px;text-align:center;color:var(--muted);font-size:.88rem}
   <h2>4. AI xử lý dữ liệu của bạn thế nào</h2>
   <ul>
     <li>Mỗi lượt học, hệ thống gửi tới mô hình AI những gì cần cho lượt đó: tin nhắn của bạn, tóm tắt các lượt trước, chủ đề/câu hỏi ban đầu, tiêu chí đánh giá, mục tiêu học của thư mục và các đoạn tài liệu liên quan (lấy từ tối đa 5 tài liệu bạn chọn). Không gửi email của bạn.</li>
-    <li>Mô hình chính là <b>Google Gemini</b>, được gọi qua một máy chủ trung gian của chúng tôi trên Cloudflare đặt tại Bắc Mỹ (chỉ chuyển tiếp, không lưu nội dung). Khi Gemini quá tải, hệ thống có thể dùng mô hình dự phòng trên <b>Groq</b> (qua Cloudflare AI Gateway, đã tắt ghi nhật ký nội dung ở phía gateway).</li>
+    <li>Mô hình chính là <b>Google Gemini</b>, được gọi qua một máy chủ trung gian của chúng tôi trên Cloudflare đặt tại Bắc Mỹ (chỉ chuyển tiếp, không lưu nội dung). Khi Gemini quá tải, hệ thống có thể chuyển lượt đó sang một mô hình dự phòng — lần lượt <b>Mistral AI</b> (Pháp), <b>Cerebras</b> (Mỹ) hoặc <b>Groq</b> (Mỹ, qua Cloudflare AI Gateway, đã tắt ghi nhật ký nội dung ở phía gateway). Chỉ nhà cung cấp đang được bật mới nhận dữ liệu, và chỉ khi Gemini không trả lời được.</li>
     <li>Ở chế độ Khám phá, nếu tài liệu của bạn chưa đủ căn cứ, hệ thống có thể gửi <b>một cụm từ khoá ngắn</b> (tối đa 200 ký tự, đã loại email, số điện thoại, đường link) tới dịch vụ tìm kiếm để tìm trang trong danh sách nguồn chính thống. Không gửi tài liệu, tên hay email của bạn.</li>
     <li>Khi dựng bản đồ khái niệm, các đoạn tài liệu bạn chọn được gửi tới mô hình AI để rút khái niệm và quan hệ. Mọi trích dẫn được hệ thống đối chiếu lại với chữ thật trong tài liệu trước khi lưu.</li>
     <li>Câu trả lời của AI có thể sai. MindMirror ghi nguồn cho từng ý và đánh dấu phần “kiến thức chung, chưa đối chiếu nguồn” để bạn tự kiểm tra.</li>
   </ul>
-  <p class="note"><b>Lưu ý về điều khoản của nhà cung cấp AI:</b> sản phẩm có thể dùng gói miễn phí của Gemini API. Theo điều khoản của Google cho gói này, nội dung gửi tới API và câu trả lời có thể được Google dùng để cung cấp và cải thiện dịch vụ, và có thể được người đánh giá của Google xem. Vì vậy, <b>đừng nhập hoặc tải lên thông tin nhạy cảm</b> (mật khẩu, số giấy tờ tuỳ thân, thông tin sức khoẻ, tài chính, dữ liệu cá nhân của người khác).</p>
+  <p class="note"><b>Lưu ý về điều khoản của nhà cung cấp AI:</b> sản phẩm có thể dùng gói miễn phí của Gemini API. Theo điều khoản của Google cho gói này, nội dung gửi tới API và câu trả lời có thể được Google dùng để cung cấp và cải thiện dịch vụ, và có thể được người đánh giá của Google xem. Tương tự, với gói miễn phí (Experiment) của Mistral, yêu cầu gửi tới API có thể được Mistral dùng để huấn luyện mô hình. Vì vậy, <b>đừng nhập hoặc tải lên thông tin nhạy cảm</b> (mật khẩu, số giấy tờ tuỳ thân, thông tin sức khoẻ, tài chính, dữ liệu cá nhân của người khác).</p>
 </section>
 
 <section class="card" id="ben-thu-ba">
@@ -161,7 +161,7 @@ footer{margin-top:28px;text-align:center;color:var(--muted);font-size:.88rem}
       <tr><td>Supabase</td><td>Cơ sở dữ liệu, xác thực đăng nhập</td><td>Tài khoản, phiên học, tài liệu (phần chữ, véc-tơ), thư mục, ghi chú, cài đặt, kết nối (đã mã hoá)</td></tr>
       <tr><td>Cloudflare</td><td>Lưu trữ và chạy ứng dụng web, máy chủ trung gian gọi AI, AI Gateway</td><td>Lưu lượng truy cập; nội dung đi qua để xử lý, không lưu</td></tr>
       <tr><td>Google</td><td>Đăng nhập Google; mô hình Gemini; tạo embedding</td><td>Thông tin đăng nhập; nội dung lượt học và đoạn tài liệu cần thiết (mục 4)</td></tr>
-      <tr><td>Groq</td><td>Mô hình AI dự phòng khi Gemini quá tải</td><td>Nội dung lượt học cần thiết (chỉ khi dùng dự phòng)</td></tr>
+      <tr><td>Mistral AI, Cerebras, Groq</td><td>Mô hình AI dự phòng khi Gemini quá tải (chỉ nhà được bật)</td><td>Nội dung lượt học cần thiết (chỉ khi dùng dự phòng)</td></tr>
       <tr><td>Tavily hoặc Wikipedia</td><td>Tìm nguồn chính thống ở chế độ Khám phá</td><td>Cụm từ khoá ngắn đã lọc thông tin cá nhân</td></tr>
       <tr><td>Neo4j Aura</td><td>Lưu bản đồ khái niệm</td><td>Khái niệm, quan hệ, câu căn cứ ngắn, số trang, mã tài khoản</td></tr>
       <tr><td>Langfuse (vùng Nhật Bản)</td><td>Giám sát chất lượng, lỗi, độ trễ, chi phí</td><td>Siêu dữ liệu kỹ thuật và mã định danh nội bộ; mặc định không có nội dung tin nhắn/tài liệu</td></tr>

@@ -32,13 +32,17 @@ export interface CallLog {
  *  - 5xx/timeout/mạng: backoff luỹ thừa, tối đa maxRetries lần, rồi fallback.
  *  - 401/403/400: lỗi cấu hình/yêu cầu → ném luôn, KHÔNG retry, KHÔNG fallback (tránh che lỗi key).
  *  - Không gọi song song 2 model.
+ *  - Có thể có NHIỀU mô hình dự phòng (vd Mistral → Cerebras → Groq): thử lần lượt, mỗi cái 1 lần; cái nào cũng quá tải thì báo lỗi.
  */
 export class ModelRouter {
+  private fallbacks: LLMProvider[];
   constructor(
     private primary: LLMProvider,
-    private fallback: LLMProvider | null,
+    fallback: LLMProvider | LLMProvider[] | null,
     private opts: RouterOptions = {},
-  ) {}
+  ) {
+    this.fallbacks = fallback ? (Array.isArray(fallback) ? fallback : [fallback]) : [];
+  }
 
   get supportsTools(): boolean {
     return !!this.primary.supportsTools;
@@ -49,8 +53,18 @@ export class ModelRouter {
     try {
       return await this.tryWithRetry(this.primary, req, false, parent ?? null);
     } catch (e) {
-      if (!(e instanceof ProviderError) || e.kind === "auth" || e.kind === "bad_request" || !this.fallback) throw e;
-      return await this.call(this.fallback, req, true, parent ?? null, 1);
+      if (!(e instanceof ProviderError) || e.kind === "auth" || e.kind === "bad_request" || !this.fallbacks.length) throw e;
+      let last: ProviderError = e;
+      for (const fb of this.fallbacks) {
+        try {
+          return await this.call(fb, req, true, parent ?? null, 1);
+        } catch (fe) {
+          if (!(fe instanceof ProviderError)) throw fe;
+          // Khoá dự phòng sai/hết hạn hay yêu cầu không hợp lệ với nhà này → thử nhà kế tiếp, không che lỗi của model chính.
+          last = fe;
+        }
+      }
+      throw last;
     }
   }
 
