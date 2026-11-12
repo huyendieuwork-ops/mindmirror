@@ -45,6 +45,9 @@ export class GroqProvider implements LLMProvider {
         response_format: { type: "json_object" },
         temperature: req.temperature ?? 0.4,
         max_completion_tokens: req.maxOutputTokens ?? 1024,
+        // gpt-oss là model suy luận: token suy luận ăn chung ngân sách max_completion_tokens. Trích xuất đồ thị cần
+        // nhiều chữ ra, ít suy luận → đặt "low" để JSON không bị cắt cụt giữa chừng.
+        ...(/gpt-oss/.test(this.cfg.model) && req.purpose === "graph_extract" ? { reasoning_effort: "low" } : {}),
       }),
     });
     if (!r.ok) {
@@ -59,6 +62,7 @@ export class GroqProvider implements LLMProvider {
       model: this.cfg.model,
       latencyMs: Date.now() - t0,
       usage: { inputTokens: data.usage?.prompt_tokens ?? 0, outputTokens: data.usage?.completion_tokens ?? 0 },
+      ...(data.choices?.[0]?.finish_reason === "length" ? { truncated: true } : {}),
     };
   }
 }
