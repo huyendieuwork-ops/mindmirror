@@ -6,6 +6,7 @@ import { saveTheme, type Theme } from "../lib/theme";
 import { signOut } from "../lib/supabase";
 import type { UserInfo } from "../components/Layout";
 import { Avatar, Btn, Icon, Modal, PageHeader, Toggle, type IconName } from "../components/ui";
+import { mascotImage, mascotMode, setMascot, type MascotMode } from "../components/Mascot";
 
 const DEFAULT: Settings = { aiStyle: "friendly", supportPreference: "socratic_first", challengeLevel: "balanced", selfAssessment: true };
 export interface NotifyPrefs { gaps: boolean; unfinished: boolean; weekly: boolean }
@@ -35,6 +36,16 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [section, setSection] = useState("account");
+  const [mMode, setMMode] = useState<MascotMode>(mascotMode);
+  const [mImg, setMImg] = useState<string | null>(mascotImage);
+  function pickMascotImage(f: File | undefined) {
+    if (!f) return;
+    if (!/^image\/(png|gif|webp|jpeg)$/.test(f.type)) { setError("Chọn ảnh PNG, GIF, WebP hoặc JPG."); return; }
+    if (f.size > 600 * 1024) { setError("Ảnh tối đa 600 KB (nên dùng PNG/GIF nền trong suốt)."); return; }
+    const r = new FileReader();
+    r.onload = () => { const url = String(r.result); try { setMascot({ img: url }); setMImg(url); setSaved("Đã đổi nhân vật"); } catch { setError("Trình duyệt không lưu được ảnh này. Thử ảnh nhỏ hơn."); } };
+    r.readAsDataURL(f);
+  }
 
   useEffect(() => { api.settings().then(setS).catch((e) => { setError(explain(e)); setS(DEFAULT); }); api.usage().then(setUsage).catch(() => {}); }, []);
   useEffect(() => { if (!saved) return; const t = setTimeout(() => setSaved(null), 2200); return () => clearTimeout(t); }, [saved]);
@@ -64,10 +75,10 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
   async function exportData() {
     setExporting(true); setError(null);
     try {
-      const [list, docs, folders] = await Promise.all([api.listSessions(), api.documents(), api.folders()]);
+      const [list, docs, folders, notes] = await Promise.all([api.listSessions(), api.documents(), api.folders(), api.notes().catch(() => ({ items: [] }))]);
       const sessions = [];
       for (const it of list.items.slice(0, 30)) sessions.push(await api.getSession(it.id).catch(() => it));
-      const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), account: { name: user.name, email: user.email ?? null }, settings: s, folders: folders.items, documents: docs.items, sessions }, null, 2)], { type: "application/json" });
+      const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), account: { name: user.name, email: user.email ?? null }, settings: s, folders: folders.items, documents: docs.items, notes: notes.items, sessions }, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `mindmirror-du-lieu-${new Date().toISOString().slice(0, 10)}.json`;
@@ -146,6 +157,20 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
               <Segmented label="Cỡ chữ" value={font} onChange={(f) => { setFont(f); setPref("chatFont", f); setSaved("Đã lưu thay đổi"); }}
                 options={[{ value: "sm", label: "Nhỏ" }, { value: "md", label: "Vừa" }, { value: "lg", label: "Lớn" }]} />
             </Row>
+            <Row title="Trợ lý ghi chú ở chân trang" desc="Nhân vật nhỏ ở chân trang — bấm vào để mở sổ ghi chú. Chọn đi dạo, đứng yên một chỗ hoặc ẩn (vẫn mở ghi chú được từ menu tài khoản).">
+              <Segmented label="Trợ lý ghi chú" value={mMode} onChange={(m) => { setMMode(m); setMascot({ mode: m }); setSaved("Đã lưu thay đổi"); }}
+                options={[{ value: "walk", label: "Đi dạo" }, { value: "stand", label: "Đứng yên" }, { value: "hidden", label: "Ẩn" }]} />
+            </Row>
+            <Row title="Hình nhân vật" desc="Mặc định là bé thỏ Mochi của MindMirror. Bạn có thể dùng ảnh nhân vật riêng (PNG/GIF/WebP nền trong suốt, ≤ 600 KB, hướng mặt sang phải) mà bạn có quyền sử dụng — ảnh chỉ lưu trên trình duyệt này.">
+              <div className="flex flex-wrap items-center gap-2">
+                {mImg && <img src={mImg} alt="Nhân vật hiện tại" className="h-10 w-10 rounded-lg border border-line object-contain" />}
+                <label className="cursor-pointer rounded-lg border border-line bg-sheet px-3 py-1.5 text-sm font-medium text-ink hover:border-mirror/60">
+                  Chọn ảnh…
+                  <input type="file" accept="image/png,image/gif,image/webp,image/jpeg" hidden onChange={(e) => { pickMascotImage(e.target.files?.[0]); e.target.value = ""; }} />
+                </label>
+                {mImg && <button onClick={() => { setMascot({ img: null }); setMImg(null); setSaved("Đã dùng nhân vật mặc định"); }} className="rounded-lg px-3 py-1.5 text-sm text-muted hover:text-ink">Dùng mặc định</button>}
+              </div>
+            </Row>
             <Row title="Chế độ kỹ thuật (demo)" desc="Hiện tab “Agent đã làm gì” trong phiên học: các bước xử lý, công cụ, guardrail, token và chi phí ước tính.">
               <Toggle label="Chế độ kỹ thuật" checked={devMode} onChange={(x) => { setDevMode(x); setPref("devMode", x); setSaved("Đã lưu thay đổi"); }} />
             </Row>
@@ -167,7 +192,7 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
             <Row title="Kết nối Google Drive, Notion" desc="Lấy tài liệu thẳng vào thư mục, chỉ đọc.">
               <Link to="/library" className="inline-flex items-center gap-1 text-sm font-medium text-mirror">Quản lý kết nối <Icon name="arrowRight" /></Link>
             </Row>
-            <Row title="Tải dữ liệu của tôi" desc="Phiên học (kèm Thẻ Gương), danh sách tài liệu và thư mục — tệp JSON.">
+            <Row title="Tải dữ liệu của tôi" desc="Phiên học (kèm Thẻ Gương), tài liệu, thư mục và ghi chú — tệp JSON.">
               <Btn onClick={exportData} disabled={exporting}>{exporting ? "Đang tạo tệp…" : "Tải xuống"}</Btn>
             </Row>
             <Row title="Lịch sử học tập" desc="Xem lại toàn bộ phiên đã học.">
@@ -176,7 +201,7 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
             <Row title="Xoá lịch sử học tập" desc="Xoá mọi phiên học, giữ lại tài liệu và thư mục. Sẽ hỏi lại trước khi xoá.">
               <Btn variant="danger" onClick={() => setDel("sessions")}>Xoá lịch sử…</Btn>
             </Row>
-            <Row title="Xoá toàn bộ dữ liệu" desc="Xoá vĩnh viễn phiên học, tài liệu, thư mục, kết nối và cài đặt. Sẽ hỏi lại trước khi xoá.">
+            <Row title="Xoá toàn bộ dữ liệu" desc="Xoá vĩnh viễn phiên học, tài liệu, thư mục, ghi chú, kết nối và cài đặt. Sẽ hỏi lại trước khi xoá.">
               <Btn variant="danger" onClick={() => setDel("all")}>Xoá dữ liệu…</Btn>
             </Row>
             <p className="pt-4 text-sm"><a href="/privacy.html" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-mirror">Đọc Chính sách quyền riêng tư <Icon name="external" /></a></p>
