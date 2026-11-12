@@ -31,6 +31,8 @@ export interface ConceptNode {
   description: string;
   /** Khoá của tên viết tắt/tên khác (vd "2nf" cho "Dạng chuẩn 2 (2NF)") — để tìm theo cách người học gọi. */
   aliases: string[];
+  /** Khoá khái niệm RỘNG HƠN chứa nó (chủ đề/mục cha) do AI sắp — chỉ để vẽ mind map, không phải quan hệ có căn cứ. */
+  parent?: string | null;
 }
 
 export interface GraphRelation {
@@ -49,7 +51,7 @@ export interface GraphWrite {
   userId: string;
   documents: { id: string; title: string }[];
   /** Trang đã được đọc trong lần dựng này (kể cả trang không rút được khái niệm) — để lần sau đọc tiếp. */
-  pages: { documentId: string; page: number | null }[];
+  pages: { documentId: string; page: number | null; v?: number }[];
   concepts: ConceptNode[];
   relations: GraphRelation[];
   mentions: GraphMention[];
@@ -72,11 +74,11 @@ export interface GraphStore {
   ping(): Promise<boolean>;
   ensureSchema(): Promise<void>;
   write(w: GraphWrite): Promise<void>;
-  /** Khoá "documentId:page" của các trang đã đọc. */
-  extractedPages(userId: string, documentIds: string[]): Promise<Set<string>>;
+  /** Khoá "documentId:page" của các trang đã đọc (bằng bộ trích xuất phiên bản ≥ minVersion — trang đọc bằng bản cũ được đọc lại). */
+  extractedPages(userId: string, documentIds: string[], minVersion?: number): Promise<Set<string>>;
   /** Khái niệm hạt giống (theo tên hoặc theo trang RAG tìm được) + quan hệ quanh chúng, chỉ trong tài liệu cho phép. */
   neighborhood(userId: string, documentIds: string[], q: { keys: string[]; pageKeys: string[] }, limit?: number): Promise<NeighborhoodResult>;
-  view(userId: string, documentIds: string[], limit?: number): Promise<GraphView>;
+  view(userId: string, documentIds: string[], limit?: number, minVersion?: number): Promise<GraphView>;
   deleteDocument(userId: string, documentId: string): Promise<void>;
   deleteUser(userId: string): Promise<void>;
 }

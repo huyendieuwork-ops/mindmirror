@@ -1,6 +1,6 @@
 import type { Citation, RetrievedChunk, WebCitation } from "../agent/types";
 import type { WebPassage } from "../web/search";
-import { containsQuote } from "./text";
+import { containsQuote, repairQuote } from "./text";
 
 /** Đặt nhãn S1..Sk cho các đoạn truy xuất được — model chỉ thấy nhãn, không thấy id thật. */
 export function aliasMap(retrieved: RetrievedChunk[]): Map<string, RetrievedChunk> {
@@ -21,7 +21,10 @@ export function validateCitation(alias: string | null | undefined, quote: string
   if (!alias || !quote) return null;
   const r = map.get(alias.trim().toUpperCase());
   if (!r) return null;
-  return containsQuote(r.chunk.text, quote) ? toCitation(r, quote) : null;
+  if (containsQuote(r.chunk.text, quote)) return toCitation(r, quote);
+  // Model chép lệch vài chữ: nhận khi câu THẬT trong đúng đoạn đó khớp ≥ 80% — hiển thị câu thật, không phải chữ của model.
+  const real = repairQuote(r.chunk.text, quote, 0.8);
+  return real ? toCitation(r, real) : null;
 }
 
 /**
@@ -44,6 +47,15 @@ export interface RenderedText {
   webCitations: WebCitation[];
   /** Số câu khẳng định bị xoá vì nhãn trích dẫn không hợp lệ. */
   removedClaims: number;
+  /** Số câu được GIỮ (bỏ nhãn) vì nếu xoá thì câu trả lời mất quá nửa — người gọi phải ghi rõ "chưa đối chiếu được". */
+  unverifiedKept?: number;
+}
+
+export interface RenderOptions {
+  /** Nhãn S có thật trong lượt này (đoạn tài liệu đã đưa cho model) — chỉ những nhãn này mới được "giữ câu, ghi chú chưa đối chiếu". */
+  realAliases?: Set<string>;
+  /** Xoá câu làm mất ≥ tỉ lệ này phần nội dung (không tính câu hỏi) → chuyển sang giữ câu + ghi chú. Mặc định 0,5. */
+  keepIfLosing?: number;
 }
 
 /**
@@ -51,9 +63,23 @@ export interface RenderedText {
  * Nhãn KHÔNG có trích dẫn hợp lệ: xoá nhãn VÀ câu khẳng định chứa nó (sửa lỗ hổng B-1), trừ khi câu đó là câu hỏi
  * hoặc còn nhãn hợp lệ khác. Không đụng khối ```code```. Nếu xoá xong không còn chữ → chỉ xoá nhãn như cũ.
  */
-export function renderCitationMarkers(text: string, valid: Map<string, Citation>, validWeb: Map<string, WebCitation> = new Map()): RenderedText {
+export function renderCitationMarkers(text: string, valid: Map<string, Citation>, validWeb: Map<string, WebCitation> = new Map(), opts: RenderOptions = {}): RenderedText {
+  const strict = renderPass(text, valid, validWeb, false);
+  const real = opts.realAliases;
+  if (!real?.size || !strict.out.removedClaims || !strict.onlyRealRemoved(real)) return strict.out;
+  // Câu bị xoá đều trích một đoạn CÓ THẬT trong lượt (chỉ chép lệch câu căn cứ) và xoá thì mất quá nửa câu trả lời
+  // → giữ câu, bỏ nhãn, báo cho người gọi ghi chú "chưa đối chiếu được nguyên văn" (không để câu trả lời trống rỗng).
+  const plain = (t: string) => t.replace(MARKER, "").split(/(?<=[.!?…])\s+|\n+/).filter((x) => !/\?\s*$/.test(x.trim())).join(" ").replace(/\s+/g, " ").trim().length;
+  const before = plain(text), after = plain(strict.out.text);
+  if (!before || (before - after) / before < (opts.keepIfLosing ?? 0.5)) return strict.out;
+  const lenient = renderPass(text, valid, validWeb, true, real);
+  return { ...lenient.out, removedClaims: 0, unverifiedKept: strict.out.removedClaims };
+}
+
+function renderPass(text: string, valid: Map<string, Citation>, validWeb: Map<string, WebCitation>, keepReal: boolean, real?: Set<string>) {
   const isValid = (a: string) => (a[0] === "W" ? validWeb.has(a) : valid.has(a));
   const parts = (group: string) => group.split(/[,;]/).map((a) => a.trim().toUpperCase());
+  const removedAliases: string[][] = [];
 
   let removedClaims = 0;
   let inCode = false;
@@ -70,11 +96,13 @@ export function renderCitationMarkers(text: string, valid: Map<string, Citation>
       const sentence = out.slice(span.start, span.end);
       const hasValidOther = marks.some((o) => o !== m && o.ok && o.start >= span.start && o.end <= span.end);
       const question = /\?\s*(\[[^\]]*\]\s*)*[.!]?\s*$/.test(sentence) || /\?/.test(sentence.replace(MARKER, ""));
-      if (hasValidOther || question) {
+      const aliases = parts(line.slice(m.start + 1, m.end - 1));
+      if (hasValidOther || question || (keepReal && real && aliases.every((a) => real.has(a)))) {
         out = out.slice(0, m.start) + out.slice(m.end);
       } else {
         out = out.slice(0, span.start) + out.slice(span.end);
         removedClaims++;
+        removedAliases.push(aliases);
       }
     }
     return out.slice(prefixLen).trim() || !prefixLen ? out : ""; // gạch đầu dòng chỉ còn ký hiệu → bỏ
@@ -100,7 +128,10 @@ export function renderCitationMarkers(text: string, valid: Map<string, Citation>
   });
   // Chỉ dọn khoảng trắng thừa do bỏ nhãn/câu (giữa chữ trên cùng dòng) — không đụng thụt lề code/bảng markdown.
   const tidy = rendered.replace(/(\S)[ \t]+([.,;!?])(?=\s|$)/g, "$1$2").replace(/(\S) {2,}(?=\S)/g, "$1 ");
-  return { text: tidy.trim(), citations: order.map((a) => valid.get(a)!), webCitations: webOrder.map((a) => validWeb.get(a)!), removedClaims };
+  return {
+    out: { text: tidy.trim(), citations: order.map((a) => valid.get(a)!), webCitations: webOrder.map((a) => validWeb.get(a)!), removedClaims } as RenderedText,
+    onlyRealRemoved: (realSet: Set<string>) => removedAliases.every((as) => as.every((a) => realSet.has(a))),
+  };
 }
 
 /** Phạm vi câu chứa nhãn [start,end): từ sau dấu kết câu trước đó tới hết dấu kết câu ngay sau nhãn. */

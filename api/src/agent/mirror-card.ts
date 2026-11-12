@@ -78,7 +78,7 @@ export function rulesCard(s: Session): MirrorCard {
     : null;
 
   const unresolved = [...new Set([
-    ...s.gaps.filter((g) => g.status === "open" || g.status === "skipped").map((g) => g.concept),
+    ...s.gaps.filter((g) => g.status === "open" || g.status === "skipped").map((g) => readableConcept(g.concept)),
     ...assessment.criteria.filter((c) => c.status === "needs_practice" || (assessment.grounded && c.status === "insufficient_evidence")).map((c) => c.concept),
   ])];
   const insufficient = observed.length === 0;
@@ -108,4 +108,9 @@ export function sameConcept(a: string, b: string): boolean {
   const n = (x: string) => x.normalize("NFC").toLowerCase().replace(/[_\-]/g, " ").replace(/\s+/g, " ").trim();
   const x = n(a), y = n(b);
   return x === y || (x.length > 6 && y.includes(x)) || (y.length > 6 && x.includes(y));
+}
+
+/** Tên lỗ hổng model ghi kiểu mã ("ket_qua_left_join") → dạng đọc được ("ket qua left join"); tên thường giữ nguyên. */
+export function readableConcept(c: string): string {
+  return /^[a-z0-9]+(_[a-z0-9]+)+$/i.test(c.trim()) ? c.trim().replace(/_/g, " ") : c;
 }

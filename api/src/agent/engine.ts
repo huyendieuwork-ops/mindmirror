@@ -80,7 +80,9 @@ export function createSession(input: NewSessionInput, deps: Pick<EngineDeps, "no
   const topic = input.topic.trim().slice(0, 200);
   const path = input.mode === "explore" && input.level ? rulesPath(topic, input.level) : null;
   const rq = input.request?.trim().slice(0, 1000) || null;
-  const request = rq && rq.replace(/[?\s.!]+$/, "") !== topic.replace(/[?\s.!]+$/, "") ? rq : null;
+  // Hỏi đáp tự do (Khám phá không dàn ý): luôn giữ câu hỏi, kể cả khi câu ngắn trùng tiêu đề — để trả lời ngay lượt đầu.
+  const freeQa = input.mode === "explore" && !path;
+  const request = rq && (freeQa || rq.replace(/[?\s.!]+$/, "") !== topic.replace(/[?\s.!]+$/, "")) ? rq : null;
   const opening = path ? pathOpening(topic, path) :
     request && input.mode === "explore"
       ? "Mình trả lời câu hỏi của bạn ngay đây nhé — phần nào có nguồn, mình ghi rõ nguồn."
@@ -137,7 +139,9 @@ export async function prepareGroundedSession(session: Session, deps: Pick<Engine
     const retrieved = await deps.retriever!.search(s.userId, s.documentIds, query, 6, { trace, parent: span, purpose: "plan" });
     span.set({ retrieved: retrieved.length });
     const docTitle = retrieved[0]?.documentTitle;
-    const fallbackOpening = retrieved.length
+    const explore = s.state.mode === "explore";
+    const exploreOpening = `${retrieved.length ? `Mình đã đọc phần liên quan trong “${docTitle}”. ` : ""}${s.messages[0]!.text}`;
+    const fallbackOpening = explore ? exploreOpening : retrieved.length
       ? `Mình đã xem phần liên quan trong “${docTitle}”${retrieved[0]!.chunk.page ? ` (tr. ${retrieved[0]!.chunk.page})` : ""}. Bạn thử giải thích “${s.state.topic}” theo cách bạn hiểu trước nhé — chưa cần mở tài liệu ra.`
       : `Mình chưa tìm thấy đoạn nào trong tài liệu nói về “${s.state.topic}”. Bạn thử giải thích theo cách bạn hiểu, mình sẽ đối chiếu khi có căn cứ nhé.`;
     if (retrieved.length === 0) {
@@ -160,8 +164,12 @@ export async function prepareGroundedSession(session: Session, deps: Pick<Engine
       s.rubric = rubric;
       span.set({ criteria_proposed: parsed.data.criteria.length, criteria_kept: rubric.length });
       const opening = sanitizeAssistantText(parsed.data.opening_question.replace(/\[S\d+\]/g, ""), fallbackOpening);
-      s.messages[0]!.text = rubric.length ? `Mình đã đọc phần liên quan trong “${docTitle}”. ${opening}` : fallbackOpening;
-      s.messages[0]!.action = "ask_explain";
+      // Khám phá: người học đến để HỎI — giữ câu mở đầu trả lời/gợi mở, không bắt họ tự giải thích trước (đó là cách Kiểm tra).
+      if (explore) s.messages[0]!.text = exploreOpening;
+      else {
+        s.messages[0]!.text = rubric.length ? `Mình đã đọc phần liên quan trong “${docTitle}”. ${opening}` : fallbackOpening;
+        s.messages[0]!.action = "ask_explain";
+      }
     } catch (e) {
       span.set({ plan_error: (e as Error).message });
       s.messages[0]!.text = fallbackOpening;
@@ -563,7 +571,9 @@ async function runTurnInner(
     for (const e of output.observed_evidence) {
       const msgId = findQuoteSource(e.quote, s.messages);
       if (!msgId) { dropped++; continue; } // quote không phải lời người học → bỏ
-      const criterionId = e.criterion_id && rubricIds.has(e.criterion_id.trim().toUpperCase()) ? e.criterion_id.trim().toUpperCase() : null;
+      // Model hay ghi mã tiêu chí vào "criterion" thay vì "criterion_id", hoặc ghi đúng tên tiêu chí → vẫn gắn đúng tiêu chí.
+      const asId = (x?: string | null) => (x && rubricIds.has(x.trim().toUpperCase()) ? x.trim().toUpperCase() : null);
+      const criterionId = asId(e.criterion_id) ?? asId(e.criterion) ?? s.rubric.find((c) => sameConcept(c.concept, e.criterion))?.id ?? null;
       const sourceCitation = e.source_ref ? validateCitation(e.source_ref.source, e.source_ref.quote, aliases) : null;
       if (sourceCitation && e.source_ref) validCites.set(e.source_ref.source.trim().toUpperCase(), sourceCitation);
       let status = e.status;
@@ -593,8 +603,12 @@ async function runTurnInner(
       }
     }
     let focusGap: Gap | null = null;
-    for (const c of output.suspected_gaps) {
+    const current = s.gaps.find((g) => g.id === s.state.currentGapId && g.status === "open") ?? null;
+    for (const [i, c] of output.suspected_gaps.entries()) {
       let g = s.gaps.find((x) => sameConcept(x.concept, c) && x.status !== "resolved" && x.status !== "resolved_after_support");
+      // Người học vẫn chưa nói đúng (không có bằng chứng "observed" ở lượt này) mà model đặt tên khác cho cùng chỗ vướng
+      // → coi là chỗ vướng đang mở, để đếm "vướng 2 lượt" và kích hoạt gợi ý / kiến thức nền như thiết kế.
+      if (!g && i === 0 && current && !newEvidence.some((e) => e.status === "observed")) g = current;
       if (!g) {
         g = { id: id(), concept: c, status: "open", supportLevel: 0 };
         s.gaps.push(g);
@@ -627,7 +641,9 @@ async function runTurnInner(
     const sec = redactSecrets(raw);
     const praise = stripUnsupportedPraise(sec.text, observedNow);
     const links = stripUnlistedLinks(praise.text, webPassages.map((p) => p.url)); // L7
-    const rendered = renderCitationMarkers(sanitizeAssistantText(links.text, fallbackText, long ? 3600 : 1800), validCites, validWeb);
+    const rendered = renderCitationMarkers(sanitizeAssistantText(links.text, fallbackText, long ? 3600 : 1800), validCites, validWeb, { realAliases: new Set(aliases.keys()) });
+    // Model trích đúng đoạn nhưng chép lệch câu căn cứ, và xoá các câu đó thì câu trả lời mất quá nửa → giữ lại, nói rõ.
+    if (rendered.unverifiedKept) rendered.text += "\n\n(Một vài ý ở trên mình chưa đối chiếu được nguyên văn với tài liệu — bạn mở tài liệu để kiểm tra lại giúp mình nhé.)";
     // Đã tìm web mà không còn trích dẫn web hợp lệ nào → rơi về bậc 3, nói rõ chưa đối chiếu được.
     if (webTried && !rendered.webCitations.length && !rendered.citations.length && !/chưa đối chiếu/i.test(rendered.text)) {
       rendered.text += webPassages.length
@@ -641,6 +657,7 @@ async function runTurnInner(
     const flags = [
       leak && "output:system_prompt_leak_blocked", sec.redacted && "output:secret_redacted", praise.removed && "output:unsupported_praise_removed",
       links.removed && "output:unlisted_link_removed", rendered.removedClaims && "output:unsupported_claim_removed",
+      rendered.unverifiedKept && "output:unverified_claim_labeled",
       repeated && "output:repeated_question", leakScore >= 0.6 && "output:possible_answer_leak",
     ].filter(Boolean) as string[];
     span.set({ flags, answer_overlap: Math.round(leakScore * 100) / 100 });

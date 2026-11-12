@@ -47,7 +47,7 @@ export default function Learn({ mode }: { mode: Mode }) {
       const q = t.trim();
       const s = await api.createSession({ mode, topic: deriveTitle(q), question: q, goal: goal.trim() || undefined, self_confidence: conf, document_ids: documentIds, folder_id: folderId, level: mode === "explore" && level !== "free" ? level : null });
       invalidate();
-      nav(sessionPath({ id: s.id, mode }), { state: mode === "explore" && level === "free" && s.request ? { autoSend: q } : null });
+      nav(sessionPath({ id: s.id, mode }), { state: mode === "explore" && level === "free" ? { autoSend: q } : null });
     } catch (e) { setError(explain(e)); setStarting(false); }
   }
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length < 5 ? [...p, id] : p));

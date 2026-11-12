@@ -114,8 +114,8 @@ export default function Folders() {
                 <FolderRoadmap folder={current} docs={shown} onOpenGraph={() => setTab("graph")} />
               ) : current && tab === "graph" ? (
                 <div className="p-5">
-                  <p className="mb-4 rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink/80">Sơ đồ được tạo từ các tài liệu trong thư mục: AI đọc từng trang, xác định khái niệm và quan hệ “cần biết trước”, mỗi quan hệ có câu trích nguyên văn làm căn cứ.</p>
-                  {shown.length ? <KnowledgeGraph docs={shown} marks={[]} /> : <Empty icon="upload" title="Chưa có tài liệu">Sơ đồ khái niệm cần ít nhất một tài liệu trong thư mục.</Empty>}
+                  <p className="mb-4 rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink/80">Sơ đồ dạng mind map được tạo từ các tài liệu trong thư mục: AI đọc từng trang, sắp các ý chính từ chủ đề lớn tới ý con, và ghi quan hệ “cần biết trước” kèm câu trích nguyên văn làm căn cứ. Bấm vào sơ đồ để xem toàn màn hình.</p>
+                  {shown.length ? <KnowledgeGraph docs={shown} marks={[]} title={current.name} /> : <Empty icon="upload" title="Chưa có tài liệu">Sơ đồ khái niệm cần ít nhất một tài liệu trong thư mục.</Empty>}
                 </div>
               ) : shown.length === 0 ? (
                 <div className="p-5"><Empty icon="upload" title="Thư mục chưa có tài liệu" action={<UploadButton variant="button" onFiles={(f) => lib.upload(f, current?.id ?? null)} />}>Tải lên PDF, slide PPTX hoặc ghi chú .txt/.md. Chữ được trích ngay trên trình duyệt.</Empty></div>

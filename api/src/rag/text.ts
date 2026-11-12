@@ -57,6 +57,46 @@ export function containsQuote(haystack: string, quote: string, minWords = 3): bo
   return true;
 }
 
+/** Tách đoạn thành câu (giữ nguyên chữ gốc) — để lấy câu căn cứ thật thay cho quote model chép lệch. */
+export function sentencesOf(text: string): string[] {
+  return text.split(/(?<=[.!?…;])\s+|\n+/).map((s) => s.trim()).filter((s) => syllables(s).length >= 3);
+}
+
+/**
+ * Quote model chép LỆCH vài chữ (đổi từ, bỏ dấu câu, đảo nhẹ) → tìm câu THẬT trong đoạn khớp nhất.
+ * Chỉ nhận khi ≥ `min` âm tiết khác nhau của quote có trong câu VÀ ≥ `min - 0.2` cặp âm tiết liền kề (giữ thứ tự) cũng có.
+ * Trả về câu gốc (chữ thật của tài liệu) — không bao giờ trả lại chữ của model.
+ */
+export function repairQuote(haystack: string, quote: string, min = 0.8): string | null {
+  const q = syllables(quote);
+  const qs = new Set(q);
+  if (qs.size < 4) return null;
+  const qb = new Set(q.slice(1).map((w, i) => `${q[i]} ${w}`));
+  let best: string | null = null, score = 0;
+  for (const s of sentencesOf(haystack)) {
+    const t = syllables(s);
+    const ts = new Set(t);
+    const tb = new Set(t.slice(1).map((w, i) => `${t[i]} ${w}`));
+    let hit = 0, bhit = 0;
+    for (const w of qs) if (ts.has(w)) hit++;
+    for (const b of qb) if (tb.has(b)) bhit++;
+    const sc = hit / qs.size;
+    if (sc > score && (!qb.size || bhit / qb.size >= min - 0.2)) { score = sc; best = s; }
+  }
+  return best && score >= min ? best.slice(0, 400) : null;
+}
+
+/** Câu đầu tiên trong đoạn có chứa thuật ngữ (so theo âm tiết, đúng ranh giới từ). */
+export function sentenceWithTerms(text: string, terms: string[][]): string | null {
+  const keys = terms.map((alts) => alts.map((t) => syllables(t).join(" ")).filter((k) => k.length >= 2));
+  if (keys.some((alts) => !alts.length)) return null;
+  for (const s of sentencesOf(text)) {
+    const hay = ` ${syllables(s).join(" ")} `;
+    if (keys.every((alts) => alts.some((k) => hay.includes(` ${k} `)))) return s.slice(0, 400);
+  }
+  return null;
+}
+
 // Câu có dạng chỉ thị cho AI → đánh dấu đoạn nghi prompt injection (vẫn lưu, nhưng cảnh báo).
 const INJECTION = [
   /ignore (all )?(previous|prior|above) (instructions|prompts)/i,
