@@ -168,7 +168,8 @@ export default function Folders() {
             <div className="flex-1">
               <div className="flex justify-between text-sm"><span className="font-semibold text-ink">Thư viện của bạn</span><span className="font-semibold text-ink">{docs.length} tài liệu</span></div>
               <p className="mt-1 text-xs text-muted">{totalPages} trang · {docs.filter((d) => d.embedded).length}/{docs.length} tài liệu hỗ trợ tìm theo ngữ nghĩa</p>
-              <Link to="/library" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-mirror">Nhập từ Google Drive, Notion… <Icon name="arrowRight" className="h-3.5 w-3.5" /></Link>
+              <Link to="/library" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-mirror">Xem tất cả tài liệu <Icon name="arrowRight" className="h-3.5 w-3.5" /></Link>
+              <p className="mt-0.5 text-[11px] text-muted">Trong Thư viện tài liệu bạn cũng nhập được từ Google Drive, Notion.</p>
             </div>
           </div>
         </Card>
