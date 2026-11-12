@@ -99,6 +99,7 @@ export class GeminiProvider implements LLMProvider {
         inputTokens: obj.usageMetadata?.promptTokenCount ?? 0,
         outputTokens: obj.usageMetadata?.candidatesTokenCount ?? 0,
       },
+      ...(obj.candidates?.[0]?.finishReason === "MAX_TOKENS" ? { truncated: true } : {}),
     };
   }
 }
