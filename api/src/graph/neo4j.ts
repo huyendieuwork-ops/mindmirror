@@ -94,18 +94,19 @@ export class Neo4jGraphStore implements GraphStore {
         `UNWIND $pages AS p
          MATCH (t:TaiLieu {userId: $userId, id: p.documentId})
          MERGE (g:Trang {userId: $userId, key: p.key})
-         SET g.documentId = p.documentId, g.page = p.page, g.extracted = true
+         SET g.documentId = p.documentId, g.page = p.page, g.extracted = true, g.v = p.v
          MERGE (g)-[:THUOC]->(t)`,
-        { userId, pages: w.pages.map((p) => ({ ...p, key: pageKey(p.documentId, p.page) })) },
+        { userId, pages: w.pages.map((p) => ({ ...p, v: p.v ?? 1, key: pageKey(p.documentId, p.page) })) },
       );
     if (w.concepts.length)
       await this.run(
         `UNWIND $concepts AS c
          MERGE (k:KhaiNiem {userId: $userId, key: c.key})
-         ON CREATE SET k.name = c.name, k.description = c.description, k.aliases = c.aliases
-         ON MATCH SET k.description = coalesce(k.description, c.description),
+         ON CREATE SET k.name = c.name, k.description = c.description, k.aliases = c.aliases, k.parent = c.parent
+         ON MATCH SET k.description = CASE WHEN coalesce(k.description, '') = '' THEN c.description ELSE k.description END,
+                      k.parent = coalesce(k.parent, c.parent),
                       k.aliases = [a IN coalesce(k.aliases, []) WHERE NOT a IN c.aliases] + c.aliases`,
-        { userId, concepts: w.concepts },
+        { userId, concepts: w.concepts.map((c) => ({ ...c, parent: c.parent ?? null })) },
       );
     if (w.mentions.length)
       await this.run(
@@ -130,10 +131,10 @@ export class Neo4jGraphStore implements GraphStore {
     }
   }
 
-  async extractedPages(userId: string, documentIds: string[]) {
+  async extractedPages(userId: string, documentIds: string[], minVersion = 0) {
     const rows = await this.run<{ key: string }>(
-      "MATCH (g:Trang {userId: $userId}) WHERE g.documentId IN $documentIds AND g.extracted RETURN g.key AS key",
-      { userId, documentIds },
+      "MATCH (g:Trang {userId: $userId}) WHERE g.documentId IN $documentIds AND g.extracted AND coalesce(g.v, 1) >= $minVersion RETURN g.key AS key",
+      { userId, documentIds, minVersion },
     );
     return new Set(rows.map((r) => r.key));
   }
@@ -167,12 +168,12 @@ export class Neo4jGraphStore implements GraphStore {
     return { seeds, relations: rows.map(toRelation) };
   }
 
-  async view(userId: string, documentIds: string[], limit = 60): Promise<GraphView> {
+  async view(userId: string, documentIds: string[], limit = 150, minVersion = 0): Promise<GraphView> {
     const concepts = await this.run<Record<string, any>>(
       `MATCH (k:KhaiNiem {userId: $userId})-[:XUAT_HIEN_O]->(g:Trang {userId: $userId})
        WHERE size($documentIds) = 0 OR g.documentId IN $documentIds
        WITH k, collect(DISTINCT g.page) AS pages, collect(DISTINCT g.documentId) AS documentIds
-       RETURN k.key AS key, k.name AS name, coalesce(k.description, '') AS description, coalesce(k.aliases, []) AS aliases, pages, documentIds
+       RETURN k.key AS key, k.name AS name, coalesce(k.description, '') AS description, coalesce(k.aliases, []) AS aliases, k.parent AS parent, pages, documentIds
        ORDER BY size(pages) DESC LIMIT $limit`,
       { userId, documentIds, limit },
     );
@@ -182,17 +183,17 @@ export class Neo4jGraphStore implements GraphStore {
        WHERE a.key IN $keys AND b.key IN $keys AND (size($documentIds) = 0 OR r.documentId IN $documentIds)
        RETURN a.key AS from, a.name AS fromName, b.key AS to, b.name AS toName, type(r) AS type,
               r.documentId AS documentId, r.documentTitle AS documentTitle, r.page AS page, r.chunkId AS chunkId, r.quote AS quote
-       LIMIT 200`,
+       LIMIT 400`,
       { userId, keys, documentIds },
     );
     const docs = await this.run<{ id: string; title: string; extractedPages: number }>(
       `MATCH (t:TaiLieu {userId: $userId}) WHERE size($documentIds) = 0 OR t.id IN $documentIds
-       OPTIONAL MATCH (g:Trang {userId: $userId})-[:THUOC]->(t)
+       OPTIONAL MATCH (g:Trang {userId: $userId})-[:THUOC]->(t) WHERE coalesce(g.v, 1) >= $minVersion
        RETURN t.id AS id, t.title AS title, count(g) AS extractedPages`,
-      { userId, documentIds },
+      { userId, documentIds, minVersion },
     );
     return {
-      concepts: concepts.map((c) => ({ key: c.key, name: c.name, description: c.description, aliases: c.aliases, pages: c.pages, documentIds: c.documentIds })),
+      concepts: concepts.map((c) => ({ key: c.key, name: c.name, description: c.description, aliases: c.aliases, parent: c.parent ?? null, pages: c.pages, documentIds: c.documentIds })),
       relations: rels.map(toRelation),
       documents: docs.map((d) => ({ id: d.id, title: d.title, extractedPages: Number(d.extractedPages) })),
     };
