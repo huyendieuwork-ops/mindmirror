@@ -161,7 +161,7 @@ export default function SettingsPage({ user }: { user: UserInfo }) {
               <Segmented label="Trợ lý ghi chú" value={mMode} onChange={(m) => { setMMode(m); setMascot({ mode: m }); setSaved("Đã lưu thay đổi"); }}
                 options={[{ value: "walk", label: "Đi dạo" }, { value: "stand", label: "Đứng yên" }, { value: "hidden", label: "Ẩn" }]} />
             </Row>
-            <Row title="Hình nhân vật" desc="Mặc định là bé Mochi của MindMirror. Bạn có thể dùng ảnh nhân vật riêng (PNG/GIF/WebP nền trong suốt, ≤ 600 KB, hướng mặt sang phải) mà bạn có quyền sử dụng — ảnh chỉ lưu trên trình duyệt này.">
+            <Row title="Hình nhân vật" desc="Mặc định là bé thỏ Mochi của MindMirror. Bạn có thể dùng ảnh nhân vật riêng (PNG/GIF/WebP nền trong suốt, ≤ 600 KB, hướng mặt sang phải) mà bạn có quyền sử dụng — ảnh chỉ lưu trên trình duyệt này.">
               <div className="flex flex-wrap items-center gap-2">
                 {mImg && <img src={mImg} alt="Nhân vật hiện tại" className="h-10 w-10 rounded-lg border border-line object-contain" />}
                 <label className="cursor-pointer rounded-lg border border-line bg-sheet px-3 py-1.5 text-sm font-medium text-ink hover:border-mirror/60">
